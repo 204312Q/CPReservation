@@ -300,12 +300,84 @@ function submitReservation(payload) {
       payload.notes || ""             // K Additional Request
     ]);
 
+    sendReservationEmail_(reservationId, payload);
+
     return { ok: true, reservationId };
 
   } finally {
     // 🔓 Always release lock
     lock.releaseLock();
   }
+}
+
+function sendReservationEmail_(reservationId, payload) {
+  const adults = Number(payload.adults || 0);
+  const children = Number(payload.children || 0);
+
+  const subject = `Chilli Padi Reservation (${reservationId})`;
+
+  const plainBody =
+`Dear ${payload.firstName || "Guest"}${payload.lastName ? " " + payload.lastName : ""},
+
+Thanks for choosing Chilli Padi Nonya Restaurant. We're super excited to have you.
+
+Here are your reservation details:
+Reservation ID: ${reservationId}
+Date: ${payload.date}
+Time: ${payload.time}
+No. Of Adults: ${adults}
+No. Of Children: ${children}
+Additional Request: ${payload.notes || "None"}
+
+Our Location:
+11 Joo Chiat Place #01-03 Singapore 427744
+Tel: +65 6275 1002
+
+Need to change or cancel your reservation? Please contact us and include your Reservation ID.
+
+Chilli Padi`;
+
+  const htmlBody = `
+  <p>Dear ${escapeHtml_(payload.firstName || "Guest")}${payload.lastName ? " " + escapeHtml_(payload.lastName) : ""},</p>
+
+  <p>Thanks for choosing <b>Chilli Padi Nonya Restaurant</b>. We're super excited to have you.</p>
+
+  <p><b>Here are your reservation details:</b></p>
+  <table cellpadding="6" style="border-collapse:collapse;">
+    <tr><td><b>Reservation ID:</b></td><td>${escapeHtml_(reservationId)}</td></tr>
+    <tr><td><b>Date:</b></td><td>${escapeHtml_(payload.date)}</td></tr>
+    <tr><td><b>Time:</b></td><td>${escapeHtml_(payload.time)}</td></tr>
+    <tr><td><b>No. Of Adults:</b></td><td>${adults}</td></tr>
+    <tr><td><b>No. Of Children:</b></td><td>${children}</td></tr>
+    <tr><td><b>Additional Request:</b></td><td>${escapeHtml_(payload.notes || "None")}</td></tr>
+  </table>
+
+  <br>
+  <p><b>Our Location:</b><br>
+  11 Joo Chiat Place #01-03 Singapore 427744<br>
+  Tel: +65 6275 1002</p>
+
+  <p>Need to change or cancel your reservation? Please contact us and include your <b>Reservation ID</b>.</p>
+
+  <p>Chilli Padi</p>
+  `;
+
+  MailApp.sendEmail({
+    to: payload.email,
+    subject,
+    body: plainBody,
+    htmlBody,
+    name: "Chilli Padi Reservations"
+  });
+}
+
+function escapeHtml_(text) {
+  return String(text ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 
