@@ -338,36 +338,125 @@ Need to change or cancel your reservation? Please contact us and include your Re
 Chilli Padi`;
 
   const htmlBody = `
-  <p>Dear ${escapeHtml_(payload.firstName || "Guest")}${payload.lastName ? " " + escapeHtml_(payload.lastName) : ""},</p>
+<div style="margin:0;padding:0;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;padding:30px 10px;">
+    <tr>
+      <td align="center">
+        
+        <!-- Card Container -->
+        <table width="100%" max-width="600" cellpadding="0" cellspacing="0"
+          style="max-width:600px;background:#ffffff;border-radius:12px;
+                 box-shadow:0 8px 24px rgba(0,0,0,0.06);overflow:hidden;">
 
-  <p>Thanks for choosing <b>Chilli Padi Nonya Restaurant</b>. We're super excited to have you.</p>
+          <!-- Header -->
+          <tr>
+            <td style="background:#8B0000;padding:20px 24px;color:#ffffff;">
+              <h2 style="margin:0;font-size:20px;">
+                Chilli Padi Nonya Restaurant
+              </h2>
+              <p style="margin:6px 0 0 0;font-size:13px;opacity:0.9;">
+                Reservation Confirmation
+              </p>
+            </td>
+          </tr>
 
-  <p><b>Here are your reservation details:</b></p>
-  <table cellpadding="6" style="border-collapse:collapse;">
-    <tr><td><b>Reservation ID:</b></td><td>${escapeHtml_(reservationId)}</td></tr>
-    <tr><td><b>Date:</b></td><td>${escapeHtml_(payload.date)}</td></tr>
-    <tr><td><b>Time:</b></td><td>${escapeHtml_(payload.time)}</td></tr>
-    <tr><td><b>No. Of Adults:</b></td><td>${adults}</td></tr>
-    <tr><td><b>No. Of Children:</b></td><td>${children}</td></tr>
-    <tr><td><b>Additional Request:</b></td><td>${escapeHtml_(payload.notes || "None")}</td></tr>
+          <!-- Body -->
+          <tr>
+            <td style="padding:24px;color:#333333;font-size:14px;line-height:1.6;">
+              
+              <p style="margin-top:0;">
+                Dear ${escapeHtml_(payload.firstName || "Guest")}${payload.lastName ? " " + escapeHtml_(payload.lastName) : ""},
+              </p>
+
+              <p>
+                Thank you for choosing <b>Chilli Padi Nonya Restaurant</b>. 
+                We’re excited to welcome you!
+              </p>
+
+              <!-- Reservation Details Box -->
+              <table width="100%" cellpadding="8" cellspacing="0"
+                style="margin:20px 0;border:1px solid #eeeeee;border-radius:8px;">
+                
+                <tr style="background:#fafafa;">
+                  <td colspan="2" style="font-weight:bold;">
+                    Reservation Details
+                  </td>
+                </tr>
+
+                <tr>
+                  <td width="40%" style="color:#666;"><b>Reservation ID</b></td>
+                  <td>${escapeHtml_(reservationId)}</td>
+                </tr>
+
+                <tr>
+                  <td style="color:#666;"><b>Date</b></td>
+                  <td>${escapeHtml_(payload.date)}</td>
+                </tr>
+
+                <tr>
+                  <td style="color:#666;"><b>Time</b></td>
+                  <td>${escapeHtml_(payload.time)}</td>
+                </tr>
+
+                <tr>
+                  <td style="color:#666;"><b>Adults</b></td>
+                  <td>${adults}</td>
+                </tr>
+
+                <tr>
+                  <td style="color:#666;"><b>Children</b></td>
+                  <td>${children}</td>
+                </tr>
+
+                <tr>
+                  <td style="color:#666;"><b>Additional Request</b></td>
+                  <td>${escapeHtml_(payload.notes || "None")}</td>
+                </tr>
+              </table>
+
+              <p>
+                <b>Location</b><br>
+                11 Joo Chiat Place #01-03 Singapore 427744<br>
+                Tel: +65 6275 1002
+              </p>
+
+              <p>
+                If you need to modify or cancel your reservation, 
+                please contact us and quote your <b>Reservation ID</b>.
+              </p>
+
+              <p style="margin-bottom:0;">
+                We look forward to serving you
+              </p>
+
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background:#fafafa;padding:16px;text-align:center;
+                       font-size:12px;color:#888;">
+              © ${new Date().getFullYear()} Chilli Padi Nonya Restaurant<br>
+              This is an automated confirmation email. Please do not reply.
+            </td>
+          </tr>
+
+        </table>
+        <!-- End Card -->
+
+      </td>
+    </tr>
   </table>
+</div>
+`;
 
-  <br>
-  <p><b>Our Location:</b><br>
-  11 Joo Chiat Place #01-03 Singapore 427744<br>
-  Tel: +65 6275 1002</p>
-
-  <p>Need to change or cancel your reservation? Please contact us and include your <b>Reservation ID</b>.</p>
-
-  <p>Chilli Padi</p>
-  `;
 
   MailApp.sendEmail({
     to: payload.email,
     subject,
     body: plainBody,
     htmlBody,
-    name: "Chilli Padi Reservations"
+    name: "No Reply - Chilli Padi Nonya Restaurant"
   });
 }
 
