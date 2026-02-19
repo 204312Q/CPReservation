@@ -5,10 +5,10 @@ const PUBLIC_HOLIDAY_SHEET_NAME = "Public Holiday";
 const MAX_PAX_PER_SLOT = 60;
 
 
-function doGet() {
-  return HtmlService.createHtmlOutputFromFile("Index")
-    .setTitle("Restaurant Reservation");
-}
+// function doGet() {
+//   return HtmlService.createHtmlOutputFromFile("Index")
+//     .setTitle("Restaurant Reservation");
+// }
 
 function getSheets_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -314,10 +314,16 @@ function sendReservationEmail_(reservationId, payload) {
   const adults = Number(payload.adults || 0);
   const children = Number(payload.children || 0);
 
+const webAppUrl = ScriptApp.getService().getUrl(); 
+  const manageLink = `${webAppUrl}?resId=${reservationId}`;
+
+  const buttonHtml = `<a href="${manageLink}" style="background:#8B0000; color:white; padding:10px; text-decoration:none;">Manage Booking</a>`;
+
+
   const subject = `Chilli Padi Reservation (${reservationId})`;
 
   const plainBody =
-`Dear ${payload.firstName || "Guest"}${payload.lastName ? " " + payload.lastName : ""},
+    `Dear ${payload.firstName || "Guest"}${payload.lastName ? " " + payload.lastName : ""},
 
 Thanks for choosing Chilli Padi Nonya Restaurant. We're super excited to have you.
 
@@ -422,7 +428,9 @@ Chilli Padi`;
 
               <p>
                 If you need to modify or cancel your reservation, 
-                please contact us and quote your <b>Reservation ID</b>.
+                please click on the button below.
+                </br>
+                ${buttonHtml}
               </p>
 
               <p style="margin-bottom:0;">
@@ -469,4 +477,51 @@ function escapeHtml_(text) {
     .replace(/'/g, "&#39;");
 }
 
+function doGet(e) {
+  // 1. Check if the URL has a Reservation ID
+  const resId = e && e.parameter ? e.parameter.resId : null;
 
+  if (resId) {
+    try {
+      const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(RESERVATION_SHEET_NAME);
+      const data = sheet.getDataRange().getValues();
+      let resData = null;
+
+      // Find the row
+      for (let i = 1; i < data.length; i++) {
+        if (data[i][0] && data[i][0].toString() === resId.toString()) {
+          resData = {
+            id: data[i][0],
+            firstName: data[i][2],
+            // Format date specifically so the HTML <input type="date"> can read it
+            date: data[i][6] instanceof Date ? Utilities.formatDate(data[i][6], Session.getScriptTimeZone(), "yyyy-MM-dd") : data[i][6],
+            adults: data[i][8],
+            notes: data[i][10]
+          };
+          break;
+        }
+      }
+
+      if (!resData) {
+        return HtmlService.createHtmlOutput("<h3>Reservation Not Found</h3><p>Could not find ID: " + resId + "</p>");
+      }
+
+      // 2. Try to load AmendPage
+      const template = HtmlService.createTemplateFromFile('AmendPage');
+      template.res = resData;
+      return template.evaluate()
+        .setTitle("Manage Reservation | Chilli Padi")
+        .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+
+    } catch (err) {
+      // If AmendPage.html has a syntax error, this will show it!
+      return HtmlService.createHtmlOutput("<h3>Template Error</h3><p>" + err.message + "</p>");
+    }
+  }
+
+  // 3. If no ID, show the standard booking form
+  return HtmlService.createHtmlOutputFromFile("Index")
+    .setTitle("Restaurant Reservation")
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
