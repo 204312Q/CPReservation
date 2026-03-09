@@ -3,16 +3,18 @@ const BLOCKING_SHEET_NAME = "Joo Chiat_Blocking";
 const PUBLIC_HOLIDAY_SHEET_NAME = "Public Holiday";
 const SPREADSHEET_ID = "1KMhTLxhmrvz-ili7oj8NMrC-wTSxT-x7fqjEtNeHdNo";
 const MAX_PAX_PER_SLOT = 60;
+const STAFF_NOTIFICATION_EMAIL = "chillipadinonyarestaurant63@gmail.com";
 
 function getSheets_() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   return {
     reservation: ss.getSheetByName(RESERVATION_SHEET_NAME),
     blocking: ss.getSheetByName(BLOCKING_SHEET_NAME),
+    publicHoliday: ss.getSheetByName(PUBLIC_HOLIDAY_SHEET_NAME),
   };
 }
 
-//Generate Reservation ID
+// Generate Reservation ID
 function getReservationID() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let id = "";
@@ -23,10 +25,78 @@ function getReservationID() {
   }
   return id;
 }
+
 function isActive_(v) {
   if (v === true) return true;
   const s = String(v || "").trim().toLowerCase();
   return ["active", "true", "yes", "y", "1"].includes(s);
+}
+
+function escapeHtml_(text) {
+  return String(text ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function normalizeDateStr_(v) {
+  if (v instanceof Date) {
+    return Utilities.formatDate(v, Session.getScriptTimeZone(), "yyyy-MM-dd");
+  }
+  return String(v || "").trim();
+}
+
+function normalizeTimeStr_(v) {
+  if (v instanceof Date) {
+    return Utilities.formatDate(v, Session.getScriptTimeZone(), "HH:mm");
+  }
+  const s = String(v || "").trim();
+  return s.length >= 5 ? s.slice(0, 5) : s;
+}
+
+function getWebAppUrl_() {
+  let webAppUrl = ScriptApp.getService().getUrl();
+  return webAppUrl.replace(/\/u\/\d+\//, "/");
+}
+
+function getManageButtonHtml_(reservationId) {
+  const manageLink = `${getWebAppUrl_()}?resId=${encodeURIComponent(reservationId)}`;
+  return `
+<div style="padding:20px 0;display:block;text-align:left;">
+  <a href="${manageLink}" 
+     style="background-color:#8B0000;
+            color:#ffffff;
+            padding:14px 28px;
+            text-decoration:none;
+            border-radius:5px;
+            display:inline-block;
+            font-weight:bold;
+            font-size:15px;
+            line-height:1;">
+     Manage / Cancel Reservation
+  </a>
+</div>`;
+}
+
+function getNewReservationButtonHtml_() {
+  const newReservationLink = getWebAppUrl_();
+  return `
+<div style="padding:20px 0;display:block;text-align:left;">
+  <a href="${newReservationLink}" 
+     style="background-color:#8B0000;
+            color:#ffffff;
+            padding:14px 28px;
+            text-decoration:none;
+            border-radius:5px;
+            display:inline-block;
+            font-weight:bold;
+            font-size:15px;
+            line-height:1;">
+     Make a New Reservation
+  </a>
+</div>`;
 }
 
 function getBlockStateForDate_(dateStr) {
@@ -46,7 +116,6 @@ function getBlockStateForDate_(dateStr) {
     if (!t) return "";
     if (t instanceof Date) return Utilities.formatDate(t, tz, "HH:mm");
     const s = String(t).trim();
-    // handle "12:00:00" => "12:00"
     return s.length >= 5 ? s.slice(0, 5) : s;
   };
 
@@ -68,13 +137,13 @@ function getBlockStateForDate_(dateStr) {
     if (!isActive_(active)) continue;
     if (rowDate !== dateStr) continue;
 
-    // ✅ Whole-day block when Start/End are blank
+    // Whole-day block when Start/End are blank
     if (!start && !end) {
       closedAllDay = true;
       break;
     }
 
-    // ✅ Time-range block when both Start and End exist
+    // Time-range block when both Start and End exist
     if (start && end) {
       const startMin = toMinutes(start);
       const endMin = toMinutes(end);
@@ -96,15 +165,14 @@ function getPaxByTimeForDate_(dateStr) {
   if (lastRow < 2) return {};
 
   const values = reservation.getRange(2, 1, lastRow - 1, 11).getValues();
-
   const paxByTime = {};
+
   for (const r of values) {
     const status = String(r[1] || "").toUpperCase().trim(); // B Status
     const dateCell = r[6]; // G Date
     const timeCell = r[7]; // H Time
     if (!dateCell || !timeCell) continue;
 
-    // Count only active reservations (adjust if needed)
     if (status === "CANCELLED" || status === "NO-SHOW") continue;
 
     const rowDateStr = (dateCell instanceof Date)
@@ -113,12 +181,10 @@ function getPaxByTimeForDate_(dateStr) {
 
     if (rowDateStr !== dateStr) continue;
 
-    // ✅ Normalize time to "HH:mm"
     let timeStr;
     if (timeCell instanceof Date) {
       timeStr = Utilities.formatDate(timeCell, Session.getScriptTimeZone(), "HH:mm");
     } else {
-      // handle "19:15", "19:15:00", etc.
       const s = String(timeCell).trim();
       timeStr = s.length >= 5 ? s.slice(0, 5) : s;
     }
@@ -133,9 +199,7 @@ function getPaxByTimeForDate_(dateStr) {
   return paxByTime;
 }
 
-
-
-// Block table expected columns: Date | Time | Reason (you can have more columns, we read first 2)
+// Block table expected columns: Date | Time | Reason
 function getBlockedMap() {
   const { blocking } = getSheets_();
   const values = blocking.getDataRange().getValues();
@@ -146,7 +210,6 @@ function getBlockedMap() {
     const time = values[i][1]; // col B
     if (!date || !time) continue;
 
-    // normalize to YYYY-MM-DD if it's a Date object
     const dateStr = (date instanceof Date)
       ? Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyy-MM-dd")
       : String(date).trim();
@@ -157,7 +220,7 @@ function getBlockedMap() {
   return map;
 }
 
-//Fetch all the public holidays from Google Sheet
+// Fetch all public holidays from Google Sheet
 function getPublicHolidayMap_() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sh = ss.getSheetByName(PUBLIC_HOLIDAY_SHEET_NAME);
@@ -188,8 +251,8 @@ function isPublicHoliday(dateStr) {
 function getAvailableTimes(dateStr) {
   const blockState = getBlockStateForDate_(dateStr);
   if (blockState.closedAllDay) return [];
-  const blockedMap = blockState.blockedSlots;
 
+  const blockedMap = blockState.blockedSlots;
   const paxByTime = getPaxByTimeForDate_(dateStr);
 
   const dateObj = new Date(dateStr + "T00:00:00");
@@ -197,7 +260,7 @@ function getAvailableTimes(dateStr) {
 
   // Public holiday treated as weekend
   if (isPublicHoliday(dateStr)) {
-    day = 0; // treat as Sunday
+    day = 0;
   }
 
   const isWeekend = (day === 0 || day === 6);
@@ -207,17 +270,13 @@ function getAvailableTimes(dateStr) {
     return h * 60 + m;
   };
 
-  // Lunch is same for all days
   const lunch = { start: "11:30", end: "14:15" };
-
-  // Dinner last reservable time depends on weekday/weekend
   const dinner = isWeekend
-    ? { start: "17:30", end: "21:30" }  // weekend last order
-    : { start: "17:30", end: "21:00" }; // weekday last order
+    ? { start: "17:30", end: "21:30" }
+    : { start: "17:30", end: "21:00" };
 
   const periods = [lunch, dinner];
   const interval = 15;
-
   const results = [];
 
   for (const p of periods) {
@@ -229,10 +288,8 @@ function getAvailableTimes(dateStr) {
       const mm = String(t % 60).padStart(2, "0");
       const timeStr = `${hh}:${mm}`;
 
-      // 1) hide if backend blocked
       if (blockedMap[`${dateStr}|${timeStr}`]) continue;
 
-      // 2) hide if fully booked (Adults + Children >= 60)
       const currentPax = paxByTime[timeStr] || 0;
       if (currentPax >= MAX_PAX_PER_SLOT) continue;
 
@@ -243,94 +300,69 @@ function getAvailableTimes(dateStr) {
   return results;
 }
 
-//Submit Reservation 
+// Submit Reservation
 function submitReservation(payload) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const reservation = ss.getSheetByName("Joo Chiat Reservation");
+  const reservation = ss.getSheetByName(RESERVATION_SHEET_NAME);
 
-  // Basic validation
   if (!payload.firstName || !payload.lastName || !payload.phone || !payload.date || !payload.time) {
     throw new Error("Missing required fields.");
   }
 
-  // 🔐 Lock to prevent double booking
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
 
   try {
-    // Re-check blocked slots (backend safety)
-    const blockedMap = getBlockedMap();
-    if (blockedMap[`${payload.date}|${payload.time}`]) {
+    const blockState = getBlockStateForDate_(payload.date);
+
+    if (blockState.closedAllDay) {
+      throw new Error("This date is unavailable. Please choose another date.");
+    }
+
+    if (blockState.blockedSlots[`${payload.date}|${payload.time}`]) {
       throw new Error("This time slot is blocked. Please choose another time.");
     }
 
-    // Capacity check
     const paxByTime = getPaxByTimeForDate_(payload.date);
     const currentPax = paxByTime[payload.time] || 0;
-    const incomingPax =
-      Number(payload.adults || 0) + Number(payload.children || 0);
+    const incomingPax = Number(payload.adults || 0) + Number(payload.children || 0);
 
     if (currentPax + incomingPax > MAX_PAX_PER_SLOT) {
-      throw new Error(
-        "This time slot is fully booked (capacity reached). Please choose another time."
-      );
+      throw new Error("This time slot is fully booked (capacity reached). Please choose another time.");
     }
 
-    // Generate Reservation ID
     const reservationId = getReservationID();
 
-    // ✅ Safe to append row
     reservation.appendRow([
       reservationId,                 // A Reservation ID
-      "PENDING",                      // B Status
-      payload.firstName,              // C First Name
-      payload.lastName,               // D Last Name
-      payload.email || "",            // E Email
-      payload.phone,                  // F Phone
-      payload.date,                   // G Date
-      payload.time,                   // H Time
-      Number(payload.adults || 0),    // I Adults
-      Number(payload.children || 0),  // J Children
-      payload.notes || ""             // K Additional Request
+      "PENDING",                     // B Status
+      payload.firstName,             // C First Name
+      payload.lastName,              // D Last Name
+      payload.email || "",           // E Email
+      payload.phone,                 // F Phone
+      payload.date,                  // G Date
+      payload.time,                  // H Time
+      Number(payload.adults || 0),   // I Adults
+      Number(payload.children || 0), // J Children
+      payload.notes || ""            // K Additional Request
     ]);
 
     sendReservationEmail_(reservationId, payload);
+    sendStaffNotificationEmail_("NEW", reservationId, payload);
 
     return { ok: true, reservationId };
-
   } finally {
-    // 🔓 Always release lock
     lock.releaseLock();
   }
 }
 
 function sendReservationEmail_(reservationId, payload) {
+  if (!payload.email) return;
+
   const adults = Number(payload.adults || 0);
   const children = Number(payload.children || 0);
-
-  let webAppUrl = ScriptApp.getService().getUrl();
-
-  // ✅ Remove /u/0/, /u/1/, etc. so it works for everyone
-  webAppUrl = webAppUrl.replace(/\/u\/\d+\//, "/");
-
-  const manageLink = `${webAppUrl}?resId=${encodeURIComponent(reservationId)}`;
-
-  const buttonHtml = `
-<div style="padding: 20px 0; display: block; text-align: left;">
-  <a href="${manageLink}" 
-     style="background-color: #8B0000; 
-            color: #ffffff; 
-            padding: 14px 28px; 
-            text-decoration: none; 
-            border-radius: 5px; 
-            display: inline-block; 
-            font-weight: bold;
-            font-size: 15px;
-            line-height: 1;">
-     Manage / Cancel Reservation
-  </a>
-</div>`;
-
+  const manageLink = `${getWebAppUrl_()}?resId=${encodeURIComponent(reservationId)}`;
+  const buttonHtml = getManageButtonHtml_(reservationId);
 
   const subject = `Chilli Padi Reservation (${reservationId})`;
 
@@ -351,7 +383,8 @@ Our Location:
 11 Joo Chiat Place #01-03 Singapore 427744
 Tel: +65 6275 1002
 
-Need to change or cancel your reservation? Please contact us and include your Reservation ID.
+To modify or cancel your reservation:
+${manageLink}
 
 Chilli Padi`;
 
@@ -360,13 +393,10 @@ Chilli Padi`;
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;padding:30px 10px;">
     <tr>
       <td align="center">
-        
-        <!-- Card Container -->
-        <table width="100%" max-width="600" cellpadding="0" cellspacing="0"
+        <table width="100%" cellpadding="0" cellspacing="0"
           style="max-width:600px;background:#ffffff;border-radius:12px;
                  box-shadow:0 8px 24px rgba(0,0,0,0.06);overflow:hidden;">
 
-          <!-- Header -->
           <tr>
             <td style="background:#8B0000;padding:20px 24px;color:#ffffff;">
               <h2 style="margin:0;font-size:20px;">
@@ -378,23 +408,19 @@ Chilli Padi`;
             </td>
           </tr>
 
-          <!-- Body -->
           <tr>
             <td style="padding:24px;color:#333333;font-size:14px;line-height:1.6;">
-              
               <p style="margin-top:0;">
                 Dear ${escapeHtml_(payload.firstName || "Guest")}${payload.lastName ? " " + escapeHtml_(payload.lastName) : ""},
               </p>
 
               <p>
-                Thank you for choosing <b>Chilli Padi Nonya Restaurant</b>. 
+                Thank you for choosing <b>Chilli Padi Nonya Restaurant</b>.
                 We’re excited to welcome you!
               </p>
 
-              <!-- Reservation Details Box -->
               <table width="100%" cellpadding="8" cellspacing="0"
                 style="margin:20px 0;border:1px solid #eeeeee;border-radius:8px;">
-                
                 <tr style="background:#fafafa;">
                   <td colspan="2" style="font-weight:bold;">
                     Reservation Details
@@ -405,27 +431,22 @@ Chilli Padi`;
                   <td width="40%" style="color:#666;"><b>Reservation ID</b></td>
                   <td>${escapeHtml_(reservationId)}</td>
                 </tr>
-
                 <tr>
                   <td style="color:#666;"><b>Date</b></td>
                   <td>${escapeHtml_(payload.date)}</td>
                 </tr>
-
                 <tr>
                   <td style="color:#666;"><b>Time</b></td>
                   <td>${escapeHtml_(payload.time)}</td>
                 </tr>
-
                 <tr>
                   <td style="color:#666;"><b>Adults</b></td>
                   <td>${adults}</td>
                 </tr>
-
                 <tr>
                   <td style="color:#666;"><b>Children</b></td>
                   <td>${children}</td>
                 </tr>
-
                 <tr>
                   <td style="color:#666;"><b>Additional Request</b></td>
                   <td>${escapeHtml_(payload.notes || "None")}</td>
@@ -439,20 +460,18 @@ Chilli Padi`;
               </p>
 
               <p>
-                If you need to modify or cancel your reservation, 
+                If you need to modify or cancel your reservation,
                 please click on the button below:
-                </br>
+                <br>
                 ${buttonHtml}
               </p>
 
               <p style="margin-bottom:0;">
-                We look forward to serving you
+                We look forward to serving you.
               </p>
-
             </td>
           </tr>
 
-          <!-- Footer -->
           <tr>
             <td style="background:#fafafa;padding:16px;text-align:center;
                        font-size:12px;color:#888;">
@@ -462,14 +481,10 @@ Chilli Padi`;
           </tr>
 
         </table>
-        <!-- End Card -->
-
       </td>
     </tr>
   </table>
-</div>
-`;
-
+</div>`;
 
   MailApp.sendEmail({
     to: payload.email,
@@ -480,19 +495,319 @@ Chilli Padi`;
   });
 }
 
-function escapeHtml_(text) {
-  return String(text ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+function sendReservationUpdatedEmail_(reservationId, payload, oldData) {
+  if (!payload.email) return;
+
+  const adults = Number(payload.adults || 0);
+  const children = Number(payload.children || 0);
+  const manageLink = `${getWebAppUrl_()}?resId=${encodeURIComponent(reservationId)}`;
+  const buttonHtml = getManageButtonHtml_(reservationId);
+
+  const subject = `Chilli Padi Reservation Updated (${reservationId})`;
+
+  const plainBody =
+    `Dear ${payload.firstName || "Guest"}${payload.lastName ? " " + payload.lastName : ""},
+
+Your reservation at Chilli Padi Nonya Restaurant has been successfully updated.
+
+Previous details:
+Reservation ID: ${reservationId}
+Date: ${oldData.date}
+Time: ${oldData.time}
+Adults: ${oldData.adults}
+Children: ${oldData.children}
+Additional Request: ${oldData.notes || "None"}
+
+Updated details:
+Reservation ID: ${reservationId}
+Date: ${payload.date}
+Time: ${payload.time}
+Adults: ${adults}
+Children: ${children}
+Additional Request: ${payload.notes || "None"}
+
+Manage your reservation:
+${manageLink}
+
+Chilli Padi`;
+
+  const htmlBody = `
+<div style="margin:0;padding:0;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;padding:30px 10px;">
+    <tr>
+      <td align="center">
+        <table width="100%" cellpadding="0" cellspacing="0"
+          style="max-width:600px;background:#ffffff;border-radius:12px;
+                 box-shadow:0 8px 24px rgba(0,0,0,0.06);overflow:hidden;">
+
+          <tr>
+            <td style="background:#8B0000;padding:20px 24px;color:#ffffff;">
+              <h2 style="margin:0;font-size:20px;">Chilli Padi Nonya Restaurant</h2>
+              <p style="margin:6px 0 0 0;font-size:13px;opacity:0.9;">Reservation Updated</p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:24px;color:#333333;font-size:14px;line-height:1.6;">
+              <p style="margin-top:0;">
+                Dear ${escapeHtml_(payload.firstName || "Guest")}${payload.lastName ? " " + escapeHtml_(payload.lastName) : ""},
+              </p>
+
+              <p>Your reservation has been successfully updated.</p>
+
+              <table width="100%" cellpadding="8" cellspacing="0"
+                style="margin:20px 0;border:1px solid #eeeeee;border-radius:8px;">
+                <tr style="background:#fafafa;">
+                  <td colspan="2" style="font-weight:bold;">Previous Details</td>
+                </tr>
+                <tr><td width="40%"><b>Reservation ID</b></td><td>${escapeHtml_(reservationId)}</td></tr>
+                <tr><td width="40%"><b>Date</b></td><td>${escapeHtml_(oldData.date)}</td></tr>
+                <tr><td><b>Time</b></td><td>${escapeHtml_(oldData.time)}</td></tr>
+                <tr><td><b>Adults</b></td><td>${Number(oldData.adults || 0)}</td></tr>
+                <tr><td><b>Children</b></td><td>${Number(oldData.children || 0)}</td></tr>
+                <tr><td><b>Additional Request</b></td><td>${escapeHtml_(oldData.notes || "None")}</td></tr>
+              </table>
+
+              <table width="100%" cellpadding="8" cellspacing="0"
+                style="margin:20px 0;border:1px solid #eeeeee;border-radius:8px;">
+                <tr style="background:#fafafa;">
+                  <td colspan="2" style="font-weight:bold;">Updated Details</td>
+                </tr>
+                <tr><td width="40%"><b>Reservation ID</b></td><td>${escapeHtml_(reservationId)}</td></tr>
+                <tr><td><b>Date</b></td><td>${escapeHtml_(payload.date)}</td></tr>
+                <tr><td><b>Time</b></td><td>${escapeHtml_(payload.time)}</td></tr>
+                <tr><td><b>Adults</b></td><td>${adults}</td></tr>
+                <tr><td><b>Children</b></td><td>${children}</td></tr>
+                <tr><td><b>Additional Request</b></td><td>${escapeHtml_(payload.notes || "None")}</td></tr>
+              </table>
+
+              <p>
+                <b>Location</b><br>
+                11 Joo Chiat Place #01-03 Singapore 427744<br>
+                Tel: +65 6275 1002
+              </p>
+
+              <p>
+                If you need to modify or cancel your reservation,
+                please click on the button below:
+                <br>
+                ${buttonHtml}
+              </p>
+
+              <p style="margin-bottom:0;">We look forward to serving you.</p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="background:#fafafa;padding:16px;text-align:center;font-size:12px;color:#888;">
+              © ${new Date().getFullYear()} Chilli Padi Nonya Restaurant<br>
+              This is an automated email. Please do not reply.
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</div>`;
+
+  MailApp.sendEmail({
+    to: payload.email,
+    subject,
+    body: plainBody,
+    htmlBody,
+    name: "No Reply - Chilli Padi Nonya Restaurant"
+  });
+}
+
+function sendReservationCancelledEmail_(reservationId, payload) {
+  if (!payload.email) return;
+
+  const newReservationLink = getWebAppUrl_();
+  const newReservationButton = getNewReservationButtonHtml_();
+
+  const subject = `Chilli Padi Reservation Cancelled (${reservationId})`;
+
+  const plainBody =
+    `Dear ${payload.firstName || "Guest"}${payload.lastName ? " " + payload.lastName : ""},
+
+Your reservation at Chilli Padi Nonya Restaurant has been cancelled.
+
+Cancelled reservation details:
+Reservation ID: ${reservationId}
+Date: ${payload.date}
+Time: ${payload.time}
+Adults: ${Number(payload.adults || 0)}
+Children: ${Number(payload.children || 0)}
+Additional Request: ${payload.notes || "None"}
+
+If this was a mistake, you can make a new reservation here:
+${newReservationLink}
+
+Chilli Padi`;
+
+  const htmlBody = `
+<div style="margin:0;padding:0;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;padding:30px 10px;">
+    <tr>
+      <td align="center">
+        <table width="100%" cellpadding="0" cellspacing="0"
+          style="max-width:600px;background:#ffffff;border-radius:12px;
+                 box-shadow:0 8px 24px rgba(0,0,0,0.06);overflow:hidden;">
+
+          <tr>
+            <td style="background:#8B0000;padding:20px 24px;color:#ffffff;">
+              <h2 style="margin:0;font-size:20px;">Chilli Padi Nonya Restaurant</h2>
+              <p style="margin:6px 0 0 0;font-size:13px;opacity:0.9;">Reservation Cancelled</p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:24px;color:#333333;font-size:14px;line-height:1.6;">
+              <p style="margin-top:0;">
+                Dear ${escapeHtml_(payload.firstName || "Guest")}${payload.lastName ? " " + escapeHtml_(payload.lastName) : ""},
+              </p>
+
+              <p>Your reservation has been cancelled successfully.</p>
+
+              <table width="100%" cellpadding="8" cellspacing="0"
+                style="margin:20px 0;border:1px solid #eeeeee;border-radius:8px;">
+                <tr style="background:#fafafa;">
+                  <td colspan="2" style="font-weight:bold;">Cancelled Reservation Details</td>
+                </tr>
+                <tr><td width="40%"><b>Reservation ID</b></td><td>${escapeHtml_(reservationId)}</td></tr>
+                <tr><td><b>Date</b></td><td>${escapeHtml_(payload.date)}</td></tr>
+                <tr><td><b>Time</b></td><td>${escapeHtml_(payload.time)}</td></tr>
+                <tr><td><b>Adults</b></td><td>${Number(payload.adults || 0)}</td></tr>
+                <tr><td><b>Children</b></td><td>${Number(payload.children || 0)}</td></tr>
+                <tr><td><b>Additional Request</b></td><td>${escapeHtml_(payload.notes || "None")}</td></tr>
+              </table>
+
+                            <p>
+                <b>Location</b><br>
+                11 Joo Chiat Place #01-03 Singapore 427744<br>
+                Tel: +65 6275 1002
+              </p>
+
+              <p>
+                If this was a mistake, you can create a new reservation below:
+              </p>
+
+              ${newReservationButton}
+            </td>
+          </tr>
+
+          <tr>
+            <td style="background:#fafafa;padding:16px;text-align:center;font-size:12px;color:#888;">
+              © ${new Date().getFullYear()} Chilli Padi Nonya Restaurant<br>
+              This is an automated email. Please do not reply.
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</div>`;
+
+  MailApp.sendEmail({
+    to: payload.email,
+    subject,
+    body: plainBody,
+    htmlBody,
+    name: "No Reply - Chilli Padi Nonya Restaurant"
+  });
+}
+
+function sendStaffNotificationEmail_(type, reservationId, payload, oldData) {
+  if (!STAFF_NOTIFICATION_EMAIL) return;
+
+  const name = [payload.firstName || "", payload.lastName || ""].join(" ").trim();
+  const adults = Number(payload.adults || 0);
+  const children = Number(payload.children || 0);
+  const totalPax = adults + children;
+
+  let subject = "";
+  let body = "";
+
+  if (type === "NEW") {
+    subject = `NEW Reservation - ${reservationId}`;
+    body =
+      `NEW RESERVATION
+
+Reservation ID: ${reservationId}
+Name: ${name}
+Phone: ${payload.phone || ""}
+Email: ${payload.email || ""}
+
+Date: ${payload.date}
+Time: ${payload.time}
+
+Adults: ${adults}
+Children: ${children}
+Total Pax: ${totalPax}
+
+Notes: ${payload.notes || "None"}`;
+  }
+
+  if (type === "UPDATE") {
+    subject = `UPDATED Reservation - ${reservationId}`;
+    body =
+      `RESERVATION UPDATED
+
+Reservation ID: ${reservationId}
+Name: ${name}
+Phone: ${payload.phone || ""}
+Email: ${payload.email || ""}
+
+Previous
+Date: ${oldData.date}
+Time: ${oldData.time}
+Adults: ${oldData.adults}
+Children: ${oldData.children}
+Notes: ${oldData.notes || "None"}
+
+Updated
+Date: ${payload.date}
+Time: ${payload.time}
+Adults: ${adults}
+Children: ${children}
+Total Pax: ${totalPax}
+Notes: ${payload.notes || "None"}`;
+  }
+
+  if (type === "CANCEL") {
+    subject = `CANCELLED Reservation - ${reservationId}`;
+    body =
+      `RESERVATION CANCELLED
+
+Reservation ID: ${reservationId}
+Name: ${name}
+Phone: ${payload.phone || ""}
+Email: ${payload.email || ""}
+
+Date: ${payload.date}
+Time: ${payload.time}
+
+Adults: ${adults}
+Children: ${children}
+Total Pax: ${totalPax}
+
+Notes: ${payload.notes || "None"}`;
+  }
+
+  if (!subject) return;
+
+  MailApp.sendEmail({
+    to: STAFF_NOTIFICATION_EMAIL,
+    subject: subject,
+    body: body,
+    name: "Chilli Padi Reservation System"
+  });
 }
 
 function doGet(e) {
   const resId = e?.parameter?.resId || null;
-
-  // Always use Index as the page
   const template = HtmlService.createTemplateFromFile("Index");
 
   if (resId) {
@@ -526,8 +841,7 @@ function doGet(e) {
       }
     }
 
-    // pass data to Index.html
-    template.res = resData;      // null if not found
+    template.res = resData;
     template.resId = resId;
   } else {
     template.res = null;
@@ -543,42 +857,126 @@ function updateReservation(form) {
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(RESERVATION_SHEET_NAME);
   const data = sheet.getDataRange().getValues();
 
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(form.resId)) {
-      const row = i + 1;
-      const currentStatus = String(data[i][1] || "").toUpperCase().trim();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
 
-      if (currentStatus === "CANCELLED") {
-        throw new Error("This reservation has already been cancelled.");
+  try {
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]) === String(form.resId)) {
+        const row = i + 1;
+        const currentStatus = String(data[i][1] || "").toUpperCase().trim();
+
+        if (currentStatus === "CANCELLED") {
+          throw new Error("This reservation has already been cancelled.");
+        }
+
+        const oldData = {
+          date: normalizeDateStr_(data[i][6]),
+          time: normalizeTimeStr_(data[i][7]),
+          adults: Number(data[i][8] || 0),
+          children: Number(data[i][9] || 0),
+          notes: data[i][10] || ""
+        };
+
+        const updatedPayload = {
+          firstName: data[i][2],
+          lastName: data[i][3],
+          email: data[i][4],
+          phone: data[i][5],
+          date: String(form.date || "").trim(),
+          time: String(form.time || "").trim(),
+          adults: Number(form.adults != null ? form.adults : data[i][8] || 0),
+          children: Number(form.children != null ? form.children : data[i][9] || 0),
+          notes: form.notes != null ? form.notes : (data[i][10] || "")
+        };
+
+        if (!updatedPayload.date || !updatedPayload.time) {
+          throw new Error("Date and time are required.");
+        }
+
+        const blockState = getBlockStateForDate_(updatedPayload.date);
+        if (blockState.closedAllDay) {
+          throw new Error("This date is unavailable. Please choose another date.");
+        }
+
+        if (blockState.blockedSlots[`${updatedPayload.date}|${updatedPayload.time}`]) {
+          throw new Error("This time slot is blocked. Please choose another time.");
+        }
+
+        const paxByTime = getPaxByTimeForDate_(updatedPayload.date);
+
+        // Subtract this reservation's existing pax if recalculating same slot
+        if (oldData.date === updatedPayload.date && oldData.time === updatedPayload.time) {
+          paxByTime[updatedPayload.time] =
+            Math.max(0, (paxByTime[updatedPayload.time] || 0) - (oldData.adults + oldData.children));
+        }
+
+        const newPax = updatedPayload.adults + updatedPayload.children;
+        const currentPax = paxByTime[updatedPayload.time] || 0;
+
+        if (currentPax + newPax > MAX_PAX_PER_SLOT) {
+          throw new Error("This time slot is fully booked (capacity reached). Please choose another time.");
+        }
+
+        sheet.getRange(row, 7).setValue(updatedPayload.date);      // G Date
+        sheet.getRange(row, 8).setValue(updatedPayload.time);      // H Time
+        sheet.getRange(row, 9).setValue(updatedPayload.adults);    // I Adults
+        sheet.getRange(row, 10).setValue(updatedPayload.children); // J Children
+        sheet.getRange(row, 11).setValue(updatedPayload.notes);    // K Notes
+
+        sendReservationUpdatedEmail_(form.resId, updatedPayload, oldData);
+        sendStaffNotificationEmail_("UPDATE", form.resId, updatedPayload, oldData);
+
+        return { ok: true, message: "Reservation updated successfully!" };
       }
-
-      sheet.getRange(row, 7).setValue(form.date);   // G Date
-      sheet.getRange(row, 8).setValue(form.time);   // H Time
-      sheet.getRange(row, 11).setValue(form.notes); // K Notes
-
-      return { ok: true, message: "Reservation updated successfully!" };
     }
-  }
 
-  throw new Error("Reservation not found.");
+    throw new Error("Reservation not found.");
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function cancelReservation(resId) {
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(RESERVATION_SHEET_NAME);
   const data = sheet.getDataRange().getValues();
 
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(resId)) {
-      const currentStatus = String(data[i][1] || "").toUpperCase().trim();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
 
-      if (currentStatus === "CANCELLED") {
-        return "This reservation is already cancelled.";
+  try {
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]) === String(resId)) {
+        const row = i + 1;
+        const currentStatus = String(data[i][1] || "").toUpperCase().trim();
+
+        if (currentStatus === "CANCELLED") {
+          return "This reservation is already cancelled.";
+        }
+
+        const payload = {
+          firstName: data[i][2],
+          lastName: data[i][3],
+          email: data[i][4],
+          phone: data[i][5],
+          date: normalizeDateStr_(data[i][6]),
+          time: normalizeTimeStr_(data[i][7]),
+          adults: Number(data[i][8] || 0),
+          children: Number(data[i][9] || 0),
+          notes: data[i][10] || ""
+        };
+
+        sheet.getRange(row, 2).setValue("CANCELLED"); // B Status
+
+        sendReservationCancelledEmail_(resId, payload);
+        sendStaffNotificationEmail_("CANCEL", resId, payload);
+
+        return "Success: Your reservation is now cancelled.";
       }
-
-      sheet.getRange(i + 1, 2).setValue("CANCELLED"); // Column B = Status
-      return "Success: Your reservation is now cancelled.";
     }
-  }
 
-  throw new Error("Reservation not found.");
+    throw new Error("Reservation not found.");
+  } finally {
+    lock.releaseLock();
+  }
 }
