@@ -1,8 +1,14 @@
 <!doctype html>
 <html>
+
 <head>
   <base target="_top">
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Flatpickr (better date picker UI) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
   <style>
     :root {
       --bg: #f6f7fb;
@@ -12,24 +18,49 @@
       --border: #e5e7eb;
       --good: #e7f7ee;
       --bad: #fdeaea;
-      --shadow: 0 10px 30px rgba(0,0,0,.08);
+      --shadow: 0 10px 30px rgba(0, 0, 0, .08);
       --radius: 14px;
     }
-    * { box-sizing: border-box; }
+
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       margin: 0;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
       background: var(--bg);
       color: var(--text);
     }
-    .wrap { max-width: 720px; margin: 0 auto; padding: 18px 14px 40px; }
-    header {
-      display:flex; align-items:center; justify-content:space-between;
-      margin-bottom: 14px;
+
+    .wrap {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 18px 14px 40px;
     }
-    .title { line-height: 1.1; }
-    .title h1 { font-size: 20px; margin: 0; }
-    .title p { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+      gap: 10px;
+    }
+
+    .title {
+      line-height: 1.1;
+    }
+
+    .title h1 {
+      font-size: 20px;
+      margin: 0;
+    }
+
+    .title p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
 
     .card {
       background: var(--card);
@@ -39,13 +70,32 @@
       padding: 16px;
     }
 
-    .grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
-    @media (min-width: 640px) {
-      .grid-2 { grid-template-columns: 1fr 1fr; }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
     }
 
-    label { display:block; font-size: 13px; color: var(--muted); }
-    input, select, textarea, button {
+    @media (min-width: 640px) {
+      .grid-2 {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    #cancelBtn {
+      background: #b91c1c;
+    }
+
+    input,
+    select,
+    textarea,
+    button {
       width: 100%;
       border-radius: 12px;
       border: 1px solid var(--border);
@@ -53,24 +103,44 @@
       font-size: 14px;
       background: #fff;
       outline: none;
+      min-height: 44px;
+      /* better mobile tap targets */
     }
-    input:focus, select:focus, textarea:focus {
+
+    input:focus,
+    select:focus,
+    textarea:focus {
       border-color: #c7d2fe;
-      box-shadow: 0 0 0 3px rgba(99,102,241,.15);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, .15);
     }
-    textarea { resize: vertical; min-height: 90px; }
 
-    .row { display:flex; gap: 12px; }
-    .row > div { flex: 1; }
+    textarea {
+      resize: vertical;
+      min-height: 90px;
+    }
 
-    .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+    .row {
+      display: flex;
+      gap: 12px;
+    }
+
+    .row>div {
+      flex: 1;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 6px;
+    }
 
     .actions {
-      display:flex;
+      display: flex;
       gap: 10px;
       margin-top: 14px;
-      align-items:center;
+      align-items: center;
     }
+
     button {
       cursor: pointer;
       font-weight: 600;
@@ -79,11 +149,15 @@
       color: #fff;
       padding: 12px 14px;
     }
-    button:disabled { opacity: .55; cursor: not-allowed; }
+
+    button:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+    }
 
     .pill {
-      display:inline-flex;
-      align-items:center;
+      display: inline-flex;
+      align-items: center;
       gap: 8px;
       padding: 8px 10px;
       border: 1px solid var(--border);
@@ -91,21 +165,63 @@
       background: #fff;
       color: var(--muted);
       font-size: 12px;
+      white-space: nowrap;
     }
+
     .msg {
       margin-top: 14px;
       padding: 12px 12px;
       border-radius: 12px;
       border: 1px solid var(--border);
       font-size: 14px;
-      display:none;
+      display: none;
       white-space: pre-wrap;
     }
-    .msg.ok { background: var(--good); display:block; }
-    .msg.err { background: var(--bad); display:block; }
 
-    .small { font-size: 12px; color: var(--muted); margin-top: 10px; }
-    .right { text-align:right; }
+    .msg.ok {
+      background: var(--good);
+      display: block;
+    }
+
+    .msg.err {
+      background: var(--bad);
+      display: block;
+    }
+
+    .small {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 10px;
+    }
+
+    .right {
+      text-align: right;
+    }
+
+    /* Prevent iOS zoom on focus + tighter spacing on small screens */
+    @media (max-width: 480px) {
+
+      input,
+      select,
+      textarea {
+        font-size: 16px;
+      }
+
+      .card {
+        padding: 14px;
+      }
+
+      .title h1 {
+        font-size: 18px;
+      }
+    }
+
+    /* 🔒 Locked pax fields styling */
+    input[readonly] {
+      background: #f3f4f6;
+      color: #6b7280;
+      cursor: not-allowed;
+    }
   </style>
 </head>
 
@@ -113,23 +229,31 @@
   <div class="wrap">
     <header>
       <div class="title">
-        <h1>Book Reservation with us!</h1>
-        <p>Choose a date & time, enter pax and contact details.</p>
+        <h1>
+          <?= res ? 'Update Reservation: ' + res.id : 'Book Reservation with us!' ?>
+        </h1>
+        <p>
+          <?= res ? 'Update your reservation details below.' : 'Choose a date & time, enter pax and contact details.' ?>
+        </p>
       </div>
       <div class="pill" id="statusPill">Ready</div>
     </header>
 
     <div class="card">
       <form id="f" onsubmit="handleSubmit(event)">
+
+        <!-- ✅ Manage mode hidden reservation id -->
+        <input type="hidden" name="resId" id="resId" value="<?= res ? res.id : '' ?>">
+
         <div class="grid grid-2">
           <div>
             <label>First Name*
-              <input name="firstName" required autocomplete="given-name" />
+              <input name="firstName" required autocomplete="given-name" value="<?= res ? res.firstName : '' ?>" />
             </label>
           </div>
           <div>
             <label>Last Name*
-              <input name="lastName" required autocomplete="family-name" />
+              <input name="lastName" required autocomplete="family-name" value="<?= res ? res.lastName : '' ?>" />
             </label>
           </div>
         </div>
@@ -137,14 +261,15 @@
         <div class="grid grid-2" style="margin-top:12px;">
           <div>
             <label>Phone*
-              <input name="phone" required inputmode="tel" autocomplete="tel"
-                     placeholder="e.g. 9123 4567" />
+              <input name="phone" required inputmode="tel" autocomplete="tel" placeholder="e.g. 9123 4567"
+                value="<?= res ? res.phone : '' ?>" />
             </label>
             <div class="hint">Numbers only recommended.</div>
           </div>
           <div>
             <label>Email
-              <input name="email" type="email" autocomplete="email" placeholder="optional" />
+              <input name="email" type="email" autocomplete="email" placeholder="optional"
+                value="<?= res ? res.email : '' ?>" />
             </label>
           </div>
         </div>
@@ -152,7 +277,9 @@
         <div class="grid grid-2" style="margin-top:12px;">
           <div>
             <label>Date*
-              <input name="date" type="date" required onchange="loadTimes()" />
+              <!-- Flatpickr uses text input for consistent UI -->
+              <input name="date" id="dateInput" type="text" required placeholder="Select date"
+                value="<?= res ? res.date : '' ?>" />
             </label>
           </div>
           <div>
@@ -167,29 +294,43 @@
         <div class="grid grid-2" style="margin-top:12px;">
           <div>
             <label>Adults*
-              <input name="adults" type="number" min="1" required value="2" oninput="updateTotal()" />
+              <input name="adults" id="adultsInput" type="number" min="1" required value="<?= res ? res.adults : 2 ?>"
+                oninput="updateTotal()" <?=res ? 'readonly' : '' ?>
+              />
             </label>
           </div>
           <div>
             <label>Children
-              <input name="children" type="number" min="0" value="0" oninput="updateTotal()" />
+              <input name="children" id="childrenInput" type="number" min="0" value="<?= res ? res.children : 0 ?>"
+                oninput="updateTotal()" <?=res ? 'readonly' : '' ?>
+              />
             </label>
           </div>
         </div>
 
         <div class="row" style="margin-top:10px;">
-          <div class="hint">Total pax: <b id="totalPax">2</b></div>
+          <div class="hint">Total pax: <b id="totalPax">
+              <?= res ? (Number(res.adults || 0) + Number(res.children || 0)) : 2 ?>
+            </b></div>
           <div class="hint right" id="capacityHint"></div>
         </div>
 
         <div style="margin-top:12px;">
           <label>Additional Request
-            <textarea name="notes" rows="3" placeholder="Dietary, stroller, wheelchair, etc."></textarea>
+            <textarea name="notes" rows="3"
+              placeholder="Dietary, stroller, wheelchair, etc."><?= res ? res.notes : '' ?></textarea>
           </label>
         </div>
 
         <div class="actions">
-          <button id="submitBtn" type="submit">Submit Reservation</button>
+          <button id="submitBtn" type="submit">
+            <?= res ? 'Update Reservation' : 'Submit Reservation' ?>
+          </button>
+          <? if (res) { ?>
+          <button id="cancelBtn" type="button" onclick="handleCancel()">
+            Cancel Reservation
+          </button>
+          <? } ?>
         </div>
 
         <div id="msg" class="msg"></div>
@@ -207,11 +348,17 @@
     const submitBtn = document.getElementById('submitBtn');
     const capacityHint = document.getElementById('capacityHint');
 
+    // ✅ Manage mode detection
+    const manageResId = "<?= res ? res.id : '' ?>";
+    const isManageMode = Boolean(manageResId);
+    const savedTime = "<?= res ? res.time : '' ?>";
+
     function setStatus(text) { statusPill.textContent = text; }
 
-    function setMsg(text, ok=true) {
+    function setMsg(text, ok = true) {
       msgEl.className = 'msg ' + (ok ? 'ok' : 'err');
       msgEl.textContent = text;
+      msgEl.style.display = 'block';
     }
 
     function clearMsg() {
@@ -228,9 +375,46 @@
 
     function disableForm(disabled) {
       [...document.querySelectorAll('input, select, textarea, button')].forEach(el => {
-        // allow Reset button while sending? up to you — here we disable everything
         el.disabled = disabled;
       });
+
+      // keep pax "readonly lock" semantics for manage mode
+      if (isManageMode) {
+        const a = document.getElementById('adultsInput');
+        const c = document.getElementById('childrenInput');
+        a.readOnly = true;
+        c.readOnly = true;
+        a.disabled = false;
+        c.disabled = false;
+      }
+    }
+
+    function lockPaxFields() {
+      if (!isManageMode) return;
+
+      const a = document.getElementById('adultsInput');
+      const c = document.getElementById('childrenInput');
+
+      const origA = Number(a.value || 0);
+      const origC = Number(c.value || 0);
+
+      // Prevent wheel/arrow increments
+      [a, c].forEach(el => {
+        el.addEventListener('keydown', (e) => {
+          if (['ArrowUp', 'ArrowDown', '+', '-'].includes(e.key)) e.preventDefault();
+        });
+        el.addEventListener('wheel', (e) => e.preventDefault(), { passive: false });
+      });
+
+      // Force revert if someone tampers
+      const revertIfChanged = () => {
+        if (Number(a.value || 0) !== origA) a.value = origA;
+        if (Number(c.value || 0) !== origC) c.value = origC;
+        updateTotal();
+      };
+
+      a.addEventListener('input', revertIfChanged);
+      c.addEventListener('input', revertIfChanged);
     }
 
     function loadTimes() {
@@ -263,6 +447,12 @@
             '<option value="">Select a time</option>' +
             times.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
           timeSel.disabled = false;
+
+          // ✅ If manage-mode, preselect old time (if still available)
+          if (isManageMode && savedTime) {
+            timeSel.value = savedTime;
+          }
+
           setStatus('Ready');
         })
         .withFailureHandler(err => {
@@ -275,7 +465,6 @@
     }
 
     function basicValidate(data) {
-      // phone: allow +, spaces, digits; but must contain at least 8 digits
       const digits = (data.phone || '').replace(/\D/g, '');
       if (digits.length < 8) return 'Phone number looks too short.';
 
@@ -307,25 +496,72 @@
 
       disableForm(true);
 
-      google.script.run
-        .withSuccessHandler(res => {
-          const id = res && (res.reservationId || res.id || '');
-          setMsg(`Reservation submitted!\nReservation ID: ${id || '(no id returned)'}`, true);
-          setStatus('Submitted');
-          f.reset();
-          timeSel.innerHTML = '<option value="">Select a date first</option>';
-          timeSel.disabled = true;
-          updateTotal();
+      const successHandler = (res) => {
+        if (isManageMode) {
+          const message = res && res.message ? res.message : "Reservation updated!";
+          setMsg(`${message}\nReservation ID: ${manageResId}`, true);
+          setStatus('Updated');
           disableForm(false);
+          return;
+        }
+
+        const id = res && (res.reservationId || res.id || '');
+        setMsg(`Reservation submitted!\nReservation ID: ${id || '(no id returned)'}`, true);
+        setStatus('Submitted');
+        f.reset();
+        timeSel.innerHTML = '<option value="">Select a date first</option>';
+        timeSel.disabled = true;
+        updateTotal();
+        disableForm(false);
+      };
+
+      const failureHandler = (err) => {
+        setMsg(err.message || String(err), false);
+        setStatus('Error');
+        disableForm(false);
+      };
+
+      if (isManageMode) {
+        google.script.run
+          .withSuccessHandler(successHandler)
+          .withFailureHandler(failureHandler)
+          .updateReservation(data);
+      } else {
+        google.script.run
+          .withSuccessHandler(successHandler)
+          .withFailureHandler(failureHandler)
+          .submitReservation(data);
+      }
+    }
+
+    function handleCancel() {
+      if (!confirm("Are you sure you want to cancel this reservation?")) {
+        return;
+      }
+
+      setStatus("Cancelling...");
+      clearMsg();
+      disableForm(true);
+
+      google.script.run
+        .withSuccessHandler(msg => {
+          setMsg(msg || "Reservation cancelled.", true);
+          setStatus("Cancelled");
+
+          const submitBtn = document.getElementById("submitBtn");
+          const cancelBtn = document.getElementById("cancelBtn");
+
+          if (submitBtn) submitBtn.style.display = "none";
+          if (cancelBtn) cancelBtn.style.display = "none";
         })
         .withFailureHandler(err => {
           setMsg(err.message || String(err), false);
-          setStatus('Error');
+          setStatus("Error");
           disableForm(false);
         })
-        .submitReservation(data);
+        .cancelReservation(manageResId);
     }
-    // Basic XSS-safe escaping for option labels
+
     function escapeHtml(str) {
       return String(str)
         .replaceAll('&', '&amp;')
@@ -335,8 +571,25 @@
         .replaceAll("'", '&#39;');
     }
 
-    // initialize total pax
+    // Init: nicer datepicker + load times when date changes
+    flatpickr("#dateInput", {
+      minDate: "today",
+      dateFormat: "Y-m-d",
+      disableMobile: true,
+      onChange: function () {
+        loadTimes();
+      }
+    });
+
+    // ✅ Manage mode: if date is prefilled, load times on page load
+    if (isManageMode) {
+      const preDate = document.querySelector('[name="date"]').value;
+      if (preDate) loadTimes();
+    }
+
+    lockPaxFields();
     updateTotal();
   </script>
 </body>
+
 </html>

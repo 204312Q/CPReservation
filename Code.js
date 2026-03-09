@@ -1,17 +1,11 @@
 const RESERVATION_SHEET_NAME = "Joo Chiat Reservation";
 const BLOCKING_SHEET_NAME = "Joo Chiat_Blocking";
 const PUBLIC_HOLIDAY_SHEET_NAME = "Public Holiday";
-
+const SPREADSHEET_ID = "1KMhTLxhmrvz-ili7oj8NMrC-wTSxT-x7fqjEtNeHdNo";
 const MAX_PAX_PER_SLOT = 60;
 
-
-// function doGet() {
-//   return HtmlService.createHtmlOutputFromFile("Index")
-//     .setTitle("Restaurant Reservation");
-// }
-
 function getSheets_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   return {
     reservation: ss.getSheetByName(RESERVATION_SHEET_NAME),
     blocking: ss.getSheetByName(BLOCKING_SHEET_NAME),
@@ -36,7 +30,7 @@ function isActive_(v) {
 }
 
 function getBlockStateForDate_(dateStr) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sh = ss.getSheetByName(BLOCKING_SHEET_NAME);
   if (!sh) return { closedAllDay: false, blockedSlots: {} };
 
@@ -165,7 +159,7 @@ function getBlockedMap() {
 
 //Fetch all the public holidays from Google Sheet
 function getPublicHolidayMap_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sh = ss.getSheetByName(PUBLIC_HOLIDAY_SHEET_NAME);
   if (!sh) return {};
 
@@ -251,7 +245,7 @@ function getAvailableTimes(dateStr) {
 
 //Submit Reservation 
 function submitReservation(payload) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const reservation = ss.getSheetByName("Joo Chiat Reservation");
 
   // Basic validation
@@ -314,10 +308,28 @@ function sendReservationEmail_(reservationId, payload) {
   const adults = Number(payload.adults || 0);
   const children = Number(payload.children || 0);
 
-const webAppUrl = ScriptApp.getService().getUrl(); 
-  const manageLink = `${webAppUrl}?resId=${reservationId}`;
+  let webAppUrl = ScriptApp.getService().getUrl();
 
-  const buttonHtml = `<a href="${manageLink}" style="background:#8B0000; color:white; padding:10px; text-decoration:none;">Manage Booking</a>`;
+  // ✅ Remove /u/0/, /u/1/, etc. so it works for everyone
+  webAppUrl = webAppUrl.replace(/\/u\/\d+\//, "/");
+
+  const manageLink = `${webAppUrl}?resId=${encodeURIComponent(reservationId)}`;
+
+  const buttonHtml = `
+<div style="padding: 20px 0; display: block; text-align: left;">
+  <a href="${manageLink}" 
+     style="background-color: #8B0000; 
+            color: #ffffff; 
+            padding: 14px 28px; 
+            text-decoration: none; 
+            border-radius: 5px; 
+            display: inline-block; 
+            font-weight: bold;
+            font-size: 15px;
+            line-height: 1;">
+     Manage / Cancel Reservation
+  </a>
+</div>`;
 
 
   const subject = `Chilli Padi Reservation (${reservationId})`;
@@ -428,7 +440,7 @@ Chilli Padi`;
 
               <p>
                 If you need to modify or cancel your reservation, 
-                please click on the button below.
+                please click on the button below:
                 </br>
                 ${buttonHtml}
               </p>
@@ -478,50 +490,95 @@ function escapeHtml_(text) {
 }
 
 function doGet(e) {
-  // 1. Check if the URL has a Reservation ID
-  const resId = e && e.parameter ? e.parameter.resId : null;
+  const resId = e?.parameter?.resId || null;
+
+  // Always use Index as the page
+  const template = HtmlService.createTemplateFromFile("Index");
 
   if (resId) {
-    try {
-      const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(RESERVATION_SHEET_NAME);
-      const data = sheet.getDataRange().getValues();
-      let resData = null;
+    const sheet = SpreadsheetApp
+      .openById(SPREADSHEET_ID)
+      .getSheetByName(RESERVATION_SHEET_NAME);
 
-      // Find the row
-      for (let i = 1; i < data.length; i++) {
-        if (data[i][0] && data[i][0].toString() === resId.toString()) {
-          resData = {
-            id: data[i][0],
-            firstName: data[i][2],
-            // Format date specifically so the HTML <input type="date"> can read it
-            date: data[i][6] instanceof Date ? Utilities.formatDate(data[i][6], Session.getScriptTimeZone(), "yyyy-MM-dd") : data[i][6],
-            adults: data[i][8],
-            notes: data[i][10]
-          };
-          break;
-        }
+    const data = sheet.getDataRange().getValues();
+    let resData = null;
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0] || "") === String(resId)) {
+        resData = {
+          id: data[i][0],
+          firstName: data[i][2],
+          lastName: data[i][3],
+          email: data[i][4],
+          phone: data[i][5],
+          date: data[i][6] instanceof Date
+            ? Utilities.formatDate(data[i][6], Session.getScriptTimeZone(), "yyyy-MM-dd")
+            : String(data[i][6] || "").trim(),
+          time: data[i][7] instanceof Date
+            ? Utilities.formatDate(data[i][7], Session.getScriptTimeZone(), "HH:mm")
+            : String(data[i][7] || "").trim().slice(0, 5),
+          adults: data[i][8],
+          children: data[i][9],
+          notes: data[i][10],
+          status: data[i][1],
+        };
+        break;
+      }
+    }
+
+    // pass data to Index.html
+    template.res = resData;      // null if not found
+    template.resId = resId;
+  } else {
+    template.res = null;
+    template.resId = null;
+  }
+
+  return template.evaluate()
+    .setTitle("Restaurant Reservation")
+    .addMetaTag("viewport", "width=device-width, initial-scale=1");
+}
+
+function updateReservation(form) {
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(RESERVATION_SHEET_NAME);
+  const data = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(form.resId)) {
+      const row = i + 1;
+      const currentStatus = String(data[i][1] || "").toUpperCase().trim();
+
+      if (currentStatus === "CANCELLED") {
+        throw new Error("This reservation has already been cancelled.");
       }
 
-      if (!resData) {
-        return HtmlService.createHtmlOutput("<h3>Reservation Not Found</h3><p>Could not find ID: " + resId + "</p>");
-      }
+      sheet.getRange(row, 7).setValue(form.date);   // G Date
+      sheet.getRange(row, 8).setValue(form.time);   // H Time
+      sheet.getRange(row, 11).setValue(form.notes); // K Notes
 
-      // 2. Try to load AmendPage
-      const template = HtmlService.createTemplateFromFile('AmendPage');
-      template.res = resData;
-      return template.evaluate()
-        .setTitle("Manage Reservation | Chilli Padi")
-        .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-
-    } catch (err) {
-      // If AmendPage.html has a syntax error, this will show it!
-      return HtmlService.createHtmlOutput("<h3>Template Error</h3><p>" + err.message + "</p>");
+      return { ok: true, message: "Reservation updated successfully!" };
     }
   }
 
-  // 3. If no ID, show the standard booking form
-  return HtmlService.createHtmlOutputFromFile("Index")
-    .setTitle("Restaurant Reservation")
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  throw new Error("Reservation not found.");
+}
+
+function cancelReservation(resId) {
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(RESERVATION_SHEET_NAME);
+  const data = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(resId)) {
+      const currentStatus = String(data[i][1] || "").toUpperCase().trim();
+
+      if (currentStatus === "CANCELLED") {
+        return "This reservation is already cancelled.";
+      }
+
+      sheet.getRange(i + 1, 2).setValue("CANCELLED"); // Column B = Status
+      return "Success: Your reservation is now cancelled.";
+    }
+  }
+
+  throw new Error("Reservation not found.");
 }
