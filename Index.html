@@ -5,7 +5,6 @@
   <base target="_top">
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- Flatpickr (better date picker UI) -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 
@@ -104,7 +103,6 @@
       background: #fff;
       outline: none;
       min-height: 44px;
-      /* better mobile tap targets */
     }
 
     input:focus,
@@ -198,9 +196,7 @@
       text-align: right;
     }
 
-    /* Prevent iOS zoom on focus + tighter spacing on small screens */
     @media (max-width: 480px) {
-
       input,
       select,
       textarea {
@@ -216,7 +212,6 @@
       }
     }
 
-    /* 🔒 Locked pax fields styling */
     input[readonly] {
       background: #f3f4f6;
       color: #6b7280;
@@ -241,9 +236,14 @@
 
     <div class="card">
       <form id="f" onsubmit="handleSubmit(event)">
-
-        <!-- ✅ Manage mode hidden reservation id -->
         <input type="hidden" name="resId" id="resId" value="<?= res ? res.id : '' ?>">
+        <input type="hidden" name="token" id="token" value="<?= token ? token : '' ?>">
+
+        <? if (errorMessage) { ?>
+          <div id="msg" class="msg err" style="display:block;"><?= errorMessage ?></div>
+        <? } else { ?>
+          <div id="msg" class="msg"></div>
+        <? } ?>
 
         <div class="grid grid-2">
           <div>
@@ -277,7 +277,6 @@
         <div class="grid grid-2" style="margin-top:12px;">
           <div>
             <label>Date*
-              <!-- Flatpickr uses text input for consistent UI -->
               <input name="date" id="dateInput" type="text" required placeholder="Select date"
                 value="<?= res ? res.date : '' ?>" />
             </label>
@@ -295,15 +294,13 @@
           <div>
             <label>Adults*
               <input name="adults" id="adultsInput" type="number" min="1" required value="<?= res ? res.adults : 2 ?>"
-                oninput="updateTotal()" <?=res ? 'readonly' : '' ?>
-              />
+                oninput="updateTotal()" <?= res ? 'readonly' : '' ?> />
             </label>
           </div>
           <div>
             <label>Children
               <input name="children" id="childrenInput" type="number" min="0" value="<?= res ? res.children : 0 ?>"
-                oninput="updateTotal()" <?=res ? 'readonly' : '' ?>
-              />
+                oninput="updateTotal()" <?= res ? 'readonly' : '' ?> />
             </label>
           </div>
         </div>
@@ -323,17 +320,16 @@
         </div>
 
         <div class="actions">
-          <button id="submitBtn" type="submit">
+          <button id="submitBtn" type="submit" <?= errorMessage ? 'disabled' : '' ?>>
             <?= res ? 'Update Reservation' : 'Submit Reservation' ?>
           </button>
           <? if (res) { ?>
-          <button id="cancelBtn" type="button" onclick="handleCancel()">
+          <button id="cancelBtn" type="button" onclick="handleCancel()" <?= errorMessage ? 'disabled' : '' ?>>
             Cancel Reservation
           </button>
           <? } ?>
         </div>
 
-        <div id="msg" class="msg"></div>
         <div class="small">
           By submitting, you confirm the details are correct.
         </div>
@@ -345,15 +341,16 @@
     const statusPill = document.getElementById('statusPill');
     const msgEl = document.getElementById('msg');
     const timeSel = document.querySelector('[name="time"]');
-    const submitBtn = document.getElementById('submitBtn');
-    const capacityHint = document.getElementById('capacityHint');
 
-    // ✅ Manage mode detection
     const manageResId = "<?= res ? res.id : '' ?>";
-    const isManageMode = Boolean(manageResId);
+    const manageToken = "<?= token ? token : '' ?>";
+    const isManageMode = Boolean(manageResId && manageToken);
     const savedTime = "<?= res ? res.time : '' ?>";
+    const hasPageError = Boolean("<?= errorMessage ? '1' : '' ?>");
 
-    function setStatus(text) { statusPill.textContent = text; }
+    function setStatus(text) {
+      statusPill.textContent = text;
+    }
 
     function setMsg(text, ok = true) {
       msgEl.className = 'msg ' + (ok ? 'ok' : 'err');
@@ -362,6 +359,7 @@
     }
 
     function clearMsg() {
+      if (hasPageError) return;
       msgEl.className = 'msg';
       msgEl.textContent = '';
       msgEl.style.display = 'none';
@@ -378,7 +376,6 @@
         el.disabled = disabled;
       });
 
-      // keep pax "readonly lock" semantics for manage mode
       if (isManageMode) {
         const a = document.getElementById('adultsInput');
         const c = document.getElementById('childrenInput');
@@ -398,7 +395,6 @@
       const origA = Number(a.value || 0);
       const origC = Number(c.value || 0);
 
-      // Prevent wheel/arrow increments
       [a, c].forEach(el => {
         el.addEventListener('keydown', (e) => {
           if (['ArrowUp', 'ArrowDown', '+', '-'].includes(e.key)) e.preventDefault();
@@ -406,7 +402,6 @@
         el.addEventListener('wheel', (e) => e.preventDefault(), { passive: false });
       });
 
-      // Force revert if someone tampers
       const revertIfChanged = () => {
         if (Number(a.value || 0) !== origA) a.value = origA;
         if (Number(c.value || 0) !== origC) c.value = origC;
@@ -420,7 +415,6 @@
     function loadTimes() {
       clearMsg();
       setStatus('Loading slots…');
-      capacityHint.textContent = '';
 
       const date = document.querySelector('[name="date"]').value;
 
@@ -448,7 +442,6 @@
             times.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
           timeSel.disabled = false;
 
-          // ✅ If manage-mode, preselect old time (if still available)
           if (isManageMode && savedTime) {
             timeSel.value = savedTime;
           }
@@ -470,10 +463,16 @@
 
       const adults = Number(data.adults || 0);
       const children = Number(data.children || 0);
+
       if (adults < 1) return 'Adults must be at least 1.';
       if (children < 0) return 'Children cannot be negative.';
       if (!data.date) return 'Please select a date.';
       if (!data.time) return 'Please select a time.';
+
+      if (isManageMode) {
+        if (!data.resId || !data.token) return 'Invalid reservation access.';
+      }
+
       return null;
     }
 
@@ -535,6 +534,11 @@
     }
 
     function handleCancel() {
+      if (!manageResId || !manageToken) {
+        setMsg("Invalid reservation access.", false);
+        return;
+      }
+
       if (!confirm("Are you sure you want to cancel this reservation?")) {
         return;
       }
@@ -559,7 +563,7 @@
           setStatus("Error");
           disableForm(false);
         })
-        .cancelReservation(manageResId);
+        .cancelReservation(manageResId, manageToken);
     }
 
     function escapeHtml(str) {
@@ -571,7 +575,6 @@
         .replaceAll("'", '&#39;');
     }
 
-    // Init: nicer datepicker + load times when date changes
     flatpickr("#dateInput", {
       minDate: "today",
       dateFormat: "Y-m-d",
@@ -581,7 +584,6 @@
       }
     });
 
-    // ✅ Manage mode: if date is prefilled, load times on page load
     if (isManageMode) {
       const preDate = document.querySelector('[name="date"]').value;
       if (preDate) loadTimes();
@@ -589,7 +591,10 @@
 
     lockPaxFields();
     updateTotal();
+
+    if (hasPageError) {
+      setStatus('Invalid link');
+    }
   </script>
 </body>
-
 </html>
