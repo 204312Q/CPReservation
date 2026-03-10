@@ -3,28 +3,43 @@ const BLOCKING_SHEET_NAME = "Joo Chiat_Blocking";
 const PUBLIC_HOLIDAY_SHEET_NAME = "Public Holiday";
 const SPREADSHEET_ID = "1KMhTLxhmrvz-ili7oj8NMrC-wTSxT-x7fqjEtNeHdNo";
 const MAX_PAX_PER_SLOT = 60;
+const MAX_PAX_PER_RESERVATION = 10;
 const STAFF_NOTIFICATION_EMAIL = "chillipadinonyarestaurant63@gmail.com";
 
 // Use your exact LIVE /exec URL here
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwL0nax89_znlj69aS5Oq9Ap5eEmri6g9prOxtg_Ze3ZRIIlEQnM7IlG07n240w654/exec";
 
+const RL = {
+  // Existing reservation / manage flow
+  MANAGE_MAX_ATTEMPTS: 10,
+  MANAGE_WINDOW_SECONDS: 10 * 60, // 10 min
+
+  // New reservation anti-spam
+  NEW_RES_MAX_ATTEMPTS: 3,
+  NEW_RES_WINDOW_SECONDS: 10 * 60, // 10 min
+
+  // Duplicate submit guard
+  DUPLICATE_WINDOW_SECONDS: 90 // 1.5 min
+};
+
 // Reservation sheet column map
 const COL = {
-  RES_ID: 1,         // A
-  STATUS: 2,         // B
-  FIRST_NAME: 3,     // C
-  LAST_NAME: 4,      // D
-  EMAIL: 5,          // E
-  PHONE: 6,          // F
-  DATE: 7,           // G
-  TIME: 8,           // H
-  ADULTS: 9,         // I
-  CHILDREN: 10,      // J
-  NOTES: 11,         // K
-  MANAGE_TOKEN: 12,  // L
-  CREATED_AT: 13,    // M
-  UPDATED_AT: 14,    // N
-  CANCELLED_AT: 15   // O
+  RES_ID: 1,           // A
+  STATUS: 2,           // B
+  FIRST_NAME: 3,       // C
+  LAST_NAME: 4,        // D
+  EMAIL: 5,            // E
+  PHONE: 6,            // F
+  DATE: 7,             // G
+  TIME: 8,             // H
+  ADULTS: 9,           // I
+  CHILDREN: 10,        // J
+  NOTES: 11,           // K
+  MANAGE_TOKEN: 12,    // L
+  CREATED_AT: 13,      // M
+  UPDATED_AT: 14,      // N
+  CANCELLED_AT: 15,    // O
+  TOKEN_EXPIRES_AT: 16 // P
 };
 
 function getSheets_() {
@@ -93,6 +108,111 @@ function normalizeTimeStr_(v) {
   return s.length >= 5 ? s.slice(0, 5) : s;
 }
 
+function normalizeEmailForLimit_(email) {
+  return String(email || "").trim().toLowerCase();
+}
+
+function normalizePhoneForLimit_(phone) {
+  return String(phone || "").replace(/\D/g, "");
+}
+
+function sha256_(text) {
+  const raw = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    String(text || ""),
+    Utilities.Charset.UTF_8
+  );
+
+  return raw.map(function (b) {
+    const v = (b < 0 ? b + 256 : b).toString(16);
+    return v.length === 1 ? "0" + v : v;
+  }).join("");
+}
+
+function getRateLimitCount_(key) {
+  const cache = CacheService.getScriptCache();
+  return Number(cache.get(key) || 0);
+}
+
+function incrementRateLimit_(key, windowSeconds) {
+  const cache = CacheService.getScriptCache();
+  const current = Number(cache.get(key) || 0) + 1;
+  cache.put(key, String(current), windowSeconds);
+  return current;
+}
+
+function clearRateLimit_(key) {
+  CacheService.getScriptCache().remove(key);
+}
+
+function assertWithinRateLimit_(key, maxAttempts, windowSeconds, message) {
+  const current = getRateLimitCount_(key);
+  if (current >= maxAttempts) {
+    throw new Error(message || "Too many attempts. Please try again later.");
+  }
+  incrementRateLimit_(key, windowSeconds);
+}
+
+function getManageRateLimitKey_(resId) {
+  return "rl_manage_" + sha256_(String(resId || "").trim());
+}
+
+function consumeManageAttempt_(resId) {
+  const key = getManageRateLimitKey_(resId);
+  assertWithinRateLimit_(
+    key,
+    RL.MANAGE_MAX_ATTEMPTS,
+    RL.MANAGE_WINDOW_SECONDS,
+    "Too many invalid reservation access attempts. Please try again later."
+  );
+}
+
+function resetManageAttempts_(resId) {
+  clearRateLimit_(getManageRateLimitKey_(resId));
+}
+
+function getNewReservationRateLimitKey_(payload) {
+  const email = normalizeEmailForLimit_(payload.email);
+  const phone = normalizePhoneForLimit_(payload.phone);
+  const identity = phone || email || "unknown";
+  return "rl_new_" + sha256_(identity);
+}
+
+function consumeNewReservationAttempt_(payload) {
+  const key = getNewReservationRateLimitKey_(payload);
+
+  assertWithinRateLimit_(
+    key,
+    RL.NEW_RES_MAX_ATTEMPTS,
+    RL.NEW_RES_WINDOW_SECONDS,
+    "Too many reservation attempts in a short time. Please wait a few minutes and try again."
+  );
+}
+
+function getDuplicateReservationKey_(payload) {
+  const signature = [
+    normalizePhoneForLimit_(payload.phone),
+    normalizeEmailForLimit_(payload.email),
+    String(payload.date || "").trim(),
+    String(payload.time || "").trim(),
+    Number(payload.adults || 0),
+    Number(payload.children || 0)
+  ].join("|");
+
+  return "dup_new_" + sha256_(signature);
+}
+
+function assertNotDuplicateReservation_(payload) {
+  const cache = CacheService.getScriptCache();
+  const key = getDuplicateReservationKey_(payload);
+
+  if (cache.get(key)) {
+    throw new Error("A similar reservation was just submitted. Please wait a moment before trying again.");
+  }
+
+  cache.put(key, "1", RL.DUPLICATE_WINDOW_SECONDS);
+}
+
 function getNow_() {
   return new Date();
 }
@@ -139,6 +259,21 @@ function getNewReservationButtonHtml_() {
 </div>`;
 }
 
+// Token Expiration Logic
+function getTokenExpiryForReservation_(dateStr, timeStr) {
+  return new Date(`${dateStr}T${timeStr}:00`);
+}
+
+function isTokenExpired_(expiryValue) {
+  if (!expiryValue) return true;
+
+  const expiry = expiryValue instanceof Date ? expiryValue : new Date(expiryValue);
+  if (isNaN(expiry.getTime())) return true;
+
+  return Date.now() > expiry.getTime();
+}
+
+// Reservation Time Validation
 function toComparableDateTime_(dateStr, timeStr) {
   return new Date(`${dateStr}T${timeStr}:00`);
 }
@@ -148,6 +283,7 @@ function isPastReservation_(dateStr, timeStr) {
   return dt.getTime() < Date.now();
 }
 
+// Form Validation
 function validateReservationPayload_(payload) {
   if (!payload.firstName || !payload.lastName || !payload.phone || !payload.date || !payload.time) {
     throw new Error("Missing required fields.");
@@ -164,33 +300,40 @@ function validateReservationPayload_(payload) {
     throw new Error("Please select at least 1 guest.");
   }
 
-  if (adults + children > MAX_PAX_PER_SLOT) {
-    throw new Error("Guest count exceeds allowed maximum.");
+  if (adults + children > MAX_PAX_PER_RESERVATION) {
+    throw new Error("Guest count exceeds allowed maximum, Max 10 Pax.");
   }
 }
 
+// Find reservation by ID and token, return null if not found or token expired
 function findReservationByIdAndToken_(resId, token) {
   const sheet = getReservationSheet_();
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return null;
 
-  const data = sheet.getRange(2, 1, lastRow - 1, COL.CANCELLED_AT).getValues();
+  const data = sheet.getRange(2, 1, lastRow - 1, COL.TOKEN_EXPIRES_AT).getValues();
 
   for (let i = 0; i < data.length; i++) {
     const row = data[i];
     const rowResId = String(row[COL.RES_ID - 1] || "").trim();
     const rowToken = String(row[COL.MANAGE_TOKEN - 1] || "").trim();
+    const tokenExpiresAt = row[COL.TOKEN_EXPIRES_AT - 1];
 
-    if (rowResId === String(resId).trim() && rowToken === String(token).trim()) {
-      return {
-        rowNumber: i + 2,
-        values: row
-      };
-    }
+    if (rowResId !== String(resId).trim()) continue;
+    if (rowToken !== String(token).trim()) continue;
+    if (!rowToken) return null;
+    if (isTokenExpired_(tokenExpiresAt)) return null;
+
+    return {
+      rowNumber: i + 2,
+      values: row
+    };
   }
+
   return null;
 }
 
+// Convert a sheet row to a reservation record object
 function getReservationRecord_(row) {
   return {
     id: row[COL.RES_ID - 1],
@@ -207,10 +350,12 @@ function getReservationRecord_(row) {
     manageToken: row[COL.MANAGE_TOKEN - 1] || "",
     createdAt: row[COL.CREATED_AT - 1] || "",
     updatedAt: row[COL.UPDATED_AT - 1] || "",
-    cancelledAt: row[COL.CANCELLED_AT - 1] || ""
+    cancelledAt: row[COL.CANCELLED_AT - 1] || "",
+    tokenExpiresAt: row[COL.TOKEN_EXPIRES_AT - 1] || ""
   };
 }
 
+// Get blocking state for a specific date, including all-day closure and blocked time slots
 function getBlockStateForDate_(dateStr) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sh = ss.getSheetByName(BLOCKING_SHEET_NAME);
@@ -269,6 +414,7 @@ function getBlockStateForDate_(dateStr) {
   return { closedAllDay, blockedSlots };
 }
 
+// Get total pax count by time slot for a specific date, excluding cancelled/no-show reservations
 function getPaxByTimeForDate_(dateStr) {
   const reservation = getReservationSheet_();
   const lastRow = reservation.getLastRow();
@@ -390,6 +536,9 @@ function getAvailableTimes(dateStr) {
 function submitReservation(payload) {
   validateReservationPayload_(payload);
 
+  consumeNewReservationAttempt_(payload);
+  assertNotDuplicateReservation_(payload);
+
   const reservation = getReservationSheet_();
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -420,6 +569,7 @@ function submitReservation(payload) {
     const reservationId = getReservationID();
     const manageToken = getManageToken_();
     const now = getNow_();
+    const tokenExpiresAt = getTokenExpiryForReservation_(payload.date, payload.time);
 
     reservation.appendRow([
       reservationId,                 // A Reservation ID
@@ -436,7 +586,8 @@ function submitReservation(payload) {
       manageToken,                   // L Manage Token
       now,                           // M Created At
       "",                            // N Updated At
-      ""                             // O Cancelled At
+      "",                            // O Cancelled At
+      tokenExpiresAt                 // P Token Expires At
     ]);
 
     sendReservationEmail_(reservationId, manageToken, payload);
@@ -911,13 +1062,17 @@ function doGet(e) {
 
     if (resId || token) {
       if (!resId || !token) {
+        if (resId) consumeManageAttempt_(resId);
         template.errorMessage = "Invalid reservation link.";
       } else {
         const found = findReservationByIdAndToken_(resId, token);
 
         if (!found) {
+          consumeManageAttempt_(resId);
           template.errorMessage = "This reservation link is invalid or has expired.";
         } else {
+          resetManageAttempts_(resId);
+
           const resData = getReservationRecord_(found.values);
           template.res = resData;
           template.resId = resId;
@@ -955,13 +1110,17 @@ function updateReservation(form) {
     const token = String(form.token || "").trim();
 
     if (!resId || !token) {
+      if (resId) consumeManageAttempt_(resId);
       throw new Error("Invalid reservation request.");
     }
 
     const found = findReservationByIdAndToken_(resId, token);
     if (!found) {
+      consumeManageAttempt_(resId);
       throw new Error("Reservation not found or invalid access token.");
     }
+
+    resetManageAttempts_(resId);
 
     const row = found.rowNumber;
     const current = getReservationRecord_(found.values);
@@ -1018,21 +1177,29 @@ function updateReservation(form) {
       throw new Error("Please select at least 1 guest.");
     }
 
+    if (newPax > MAX_PAX_PER_RESERVATION) {
+      throw new Error("Guest count exceeds allowed maximum, Max 10 Pax.");
+    }
+
     if (currentPax + newPax > MAX_PAX_PER_SLOT) {
       throw new Error("This time slot is fully booked (capacity reached). Please choose another time.");
     }
 
     const sheet = getReservationSheet_();
     const now = getNow_();
+    const newManageToken = getManageToken_();
+    const newTokenExpiresAt = getTokenExpiryForReservation_(updatedPayload.date, updatedPayload.time);
 
     sheet.getRange(row, COL.DATE).setValue(updatedPayload.date);
     sheet.getRange(row, COL.TIME).setValue(updatedPayload.time);
     sheet.getRange(row, COL.ADULTS).setValue(updatedPayload.adults);
     sheet.getRange(row, COL.CHILDREN).setValue(updatedPayload.children);
     sheet.getRange(row, COL.NOTES).setValue(updatedPayload.notes);
+    sheet.getRange(row, COL.MANAGE_TOKEN).setValue(newManageToken);
     sheet.getRange(row, COL.UPDATED_AT).setValue(now);
+    sheet.getRange(row, COL.TOKEN_EXPIRES_AT).setValue(newTokenExpiresAt);
 
-    sendReservationUpdatedEmail_(resId, token, updatedPayload, {
+    sendReservationUpdatedEmail_(resId, newManageToken, updatedPayload, {
       date: current.date,
       time: current.time,
       adults: current.adults,
@@ -1063,13 +1230,17 @@ function cancelReservation(resId, token) {
     const cleanToken = String(token || "").trim();
 
     if (!cleanResId || !cleanToken) {
+      if (cleanResId) consumeManageAttempt_(cleanResId);
       throw new Error("Invalid cancellation request.");
     }
 
     const found = findReservationByIdAndToken_(cleanResId, cleanToken);
     if (!found) {
+      consumeManageAttempt_(cleanResId);
       throw new Error("Reservation not found or invalid access token.");
     }
+
+    resetManageAttempts_(cleanResId);
 
     const row = found.rowNumber;
     const current = getReservationRecord_(found.values);
@@ -1089,6 +1260,8 @@ function cancelReservation(resId, token) {
     sheet.getRange(row, COL.STATUS).setValue("CANCELLED");
     sheet.getRange(row, COL.CANCELLED_AT).setValue(now);
     sheet.getRange(row, COL.UPDATED_AT).setValue(now);
+    sheet.getRange(row, COL.MANAGE_TOKEN).setValue("");
+    sheet.getRange(row, COL.TOKEN_EXPIRES_AT).setValue("");
 
     const payload = {
       firstName: current.firstName,

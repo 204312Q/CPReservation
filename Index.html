@@ -261,14 +261,13 @@
         <div class="grid grid-2" style="margin-top:12px;">
           <div>
             <label>Phone*
-              <input name="phone" required inputmode="tel" autocomplete="tel" placeholder="e.g. 9123 4567"
+              <input name="phone" required inputmode="tel" autocomplete="tel" placeholder="e.g. 91234567"
                 value="<?= res ? res.phone : '' ?>" />
             </label>
-            <div class="hint">Numbers only recommended.</div>
           </div>
           <div>
-            <label>Email
-              <input name="email" type="email" autocomplete="email" placeholder="optional"
+            <label>Email*
+              <input name="email" required type="email" autocomplete="email" placeholder="e.g. john.doe@example.com"
                 value="<?= res ? res.email : '' ?>" />
             </label>
           </div>
