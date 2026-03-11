@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <base target="_top">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 16px;
+      color: #333;
+      background: #eef1f5;
+    }
+
+    h2 {
+      margin-top: 0;
+      font-size: 18px;
+    }
+
+    label {
+      display: block;
+      margin: 10px 0 4px;
+      font-size: 13px;
+      font-weight: bold;
+    }
+
+    input,
+    textarea,
+    select {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px 12px;
+      font-size: 14px;
+      border: 1px solid #cfcfcf;
+      border-radius: 8px;
+      background: #ffffff;
+      color: #333;
+      height: 38px;
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+    }
+
+    textarea {
+      min-height: 76px;
+      height: auto;
+      resize: vertical;
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+    }
+
+    .row>div {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .select-wrap {
+      position: relative;
+    }
+
+    .select-wrap select {
+      padding-right: 34px;
+    }
+
+    .select-wrap::after {
+      content: "▾";
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      pointer-events: none;
+      color: #666;
+      font-size: 14px;
+    }
+
+    button {
+      margin-top: 14px;
+      width: 100%;
+      padding: 11px 12px;
+      border: 0;
+      border-radius: 8px;
+      background: #a80000;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      font-size: 15px;
+    }
+
+    .msg {
+      margin-top: 12px;
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      display: none;
+    }
+
+    .msg.success {
+      display: block;
+      background: #e7f7ee;
+      color: #1f6b3b;
+    }
+
+    .msg.error {
+      display: block;
+      background: #fdeaea;
+      color: #8b1e1e;
+    }
+  </style>
+</head>
+
+<body>
+  <h2>New Offline Reservation</h2>
+
+  <form id="offlineForm">
+    <div class="row">
+      <div>
+        <label>First Name</label>
+        <input name="firstName" required>
+      </div>
+      <div>
+        <label>Last Name</label>
+        <input name="lastName" required>
+      </div>
+    </div>
+
+    <label>Email</label>
+    <input name="email" type="email">
+
+    <label>Phone</label>
+    <input name="phone" required>
+
+    <div class="row">
+      <div>
+        <label>Date</label>
+        <input name="date" id="dateInput" type="date" required>
+      </div>
+      <div>
+        <label>Time</label>
+        <div class="select-wrap">
+          <select name="time" id="timeSelect" required>
+            <option value="">Select a time</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Adults</label>
+        <input name="adults" type="number" min="0" value="1" required>
+      </div>
+      <div>
+        <label>Children</label>
+        <input name="children" type="number" min="0" value="0" required>
+      </div>
+    </div>
+
+    <label>Additional Request</label>
+    <textarea name="AdditionalRequests"></textarea>
+
+    <button type="submit" id="submitBtn">Create Reservation</button>
+  </form>
+
+  <div id="msg" class="msg"></div>
+
+  <script>
+    const form = document.getElementById("offlineForm");
+    const submitBtn = document.getElementById("submitBtn");
+    const msg = document.getElementById("msg");
+    const dateInput = document.getElementById("dateInput");
+    const timeSelect = document.getElementById("timeSelect");
+
+    function showMessage(text, type) {
+      msg.textContent = text;
+      msg.className = "msg " + type;
+    }
+
+    function setTimeOptions(times) {
+      timeSelect.innerHTML = "";
+
+      if (!times || !times.length) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "No available times";
+        timeSelect.appendChild(opt);
+        return;
+      }
+
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "Select a time";
+      timeSelect.appendChild(placeholder);
+
+      times.forEach(function (time) {
+        const opt = document.createElement("option");
+        opt.value = time;
+        opt.textContent = time;
+        timeSelect.appendChild(opt);
+      });
+    }
+
+    dateInput.addEventListener("change", function () {
+      const date = dateInput.value;
+
+      timeSelect.innerHTML = '<option value="">Loading...</option>';
+
+      if (!date) {
+        timeSelect.innerHTML = '<option value="">Select a date first</option>';
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function (times) {
+          setTimeOptions(times);
+        })
+        .withFailureHandler(function (err) {
+          timeSelect.innerHTML = '<option value="">Unable to load times</option>';
+          showMessage(err.message || "Failed to load available times.", "error");
+        })
+        .getAvailableTimesForSidebar(date);
+    });
+
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      submitBtn.disabled = true;
+      msg.className = "msg";
+      msg.textContent = "";
+
+      const data = Object.fromEntries(new FormData(form).entries());
+
+      google.script.run
+        .withSuccessHandler(function (res) {
+          submitBtn.disabled = false;
+          showMessage("Reservation created. ID: " + res.reservationId, "success");
+          form.reset();
+          timeSelect.innerHTML = '<option value="">Select a date first</option>';
+        })
+        .withFailureHandler(function (err) {
+          submitBtn.disabled = false;
+          showMessage(err.message || "Something went wrong.", "error");
+        })
+        .createOfflineReservation(data);
+    });
+  </script>
+</body>
+
+</html>

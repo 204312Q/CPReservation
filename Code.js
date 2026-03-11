@@ -1283,3 +1283,109 @@ function cancelReservation(resId, token) {
     lock.releaseLock();
   }
 }
+
+//================================================================
+
+//Offline reservation creation for walk-in customers or phone reservations
+
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu("Reservations")
+    .addItem("New Offline Reservation", "openOfflineReservationSidebar")
+    .addToUi();
+}
+
+function openOfflineReservationSidebar() {
+  const html = HtmlService
+    .createHtmlOutputFromFile("OfflineReservation")
+    .setTitle("New Offline Reservation");
+
+  SpreadsheetApp.getUi().showSidebar(html);
+}
+
+function createOfflineReservation(form) {
+  const payload = {
+    firstName: String(form.firstName || "").trim(),
+    lastName: String(form.lastName || "").trim(),
+    email: String(form.email || "").trim(),
+    phone: String(form.phone || "").trim(),
+    date: String(form.date || "").trim(),
+    time: String(form.time || "").trim(),
+    adults: Number(form.adults || 0),
+    children: Number(form.children || 0),
+    notes: String(form.notes || "").trim()
+  };
+
+  validateReservationPayload_(payload);
+
+  const reservation = getReservationSheet_();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+
+  try {
+    const blockState = getBlockStateForDate_(payload.date);
+
+    if (blockState.closedAllDay) {
+      throw new Error("This date is unavailable. Please choose another date.");
+    }
+
+    if (blockState.blockedSlots[`${payload.date}|${payload.time}`]) {
+      throw new Error("This time slot is blocked. Please choose another time.");
+    }
+
+    if (isPastReservation_(payload.date, payload.time)) {
+      throw new Error("You cannot create a reservation in the past.");
+    }
+
+    const paxByTime = getPaxByTimeForDate_(payload.date);
+    const currentPax = paxByTime[payload.time] || 0;
+    const incomingPax = Number(payload.adults || 0) + Number(payload.children || 0);
+
+    if (currentPax + incomingPax > MAX_PAX_PER_SLOT) {
+      throw new Error("This time slot is fully booked (capacity reached). Please choose another time.");
+    }
+
+    const reservationId = getReservationID();
+    const manageToken = getManageToken_();
+    const now = getNow_();
+    const tokenExpiresAt = getTokenExpiryForReservation_(payload.date, payload.time);
+
+    reservation.appendRow([
+      reservationId,
+      "PENDING",
+      payload.firstName,
+      payload.lastName,
+      payload.email || "",
+      payload.phone,
+      payload.date,
+      payload.time,
+      Number(payload.adults || 0),
+      Number(payload.children || 0),
+      payload.notes || "",
+      manageToken,
+      now,
+      "",
+      "",
+      tokenExpiresAt
+    ]);
+
+    if (payload.email) {
+      sendReservationEmail_(reservationId, manageToken, payload);
+    }
+
+    sendStaffNotificationEmail_("NEW", reservationId, payload);
+
+    return {
+      ok: true,
+      reservationId: reservationId
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function getAvailableTimesForSidebar(dateStr) {
+  const cleanDate = String(dateStr || "").trim();
+  if (!cleanDate) return [];
+  return getAvailableTimes(cleanDate);
+}
