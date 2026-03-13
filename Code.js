@@ -1292,6 +1292,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu("Reservations")
     .addItem("New Offline Reservation", "openOfflineReservationSidebar")
+    .addItem("Edit/Cancel Reservation", "openEditReservationSidebar")
     .addToUi();
 }
 
@@ -1299,6 +1300,14 @@ function openOfflineReservationSidebar() {
   const html = HtmlService
     .createHtmlOutputFromFile("OfflineReservation")
     .setTitle("New Offline Reservation");
+
+  SpreadsheetApp.getUi().showSidebar(html);
+}
+
+function openEditReservationSidebar() {
+  const html = HtmlService
+    .createHtmlOutputFromFile("EditReservation")
+    .setTitle("Edit Reservation");
 
   SpreadsheetApp.getUi().showSidebar(html);
 }
@@ -1388,4 +1397,195 @@ function getAvailableTimesForSidebar(dateStr) {
   const cleanDate = String(dateStr || "").trim();
   if (!cleanDate) return [];
   return getAvailableTimes(cleanDate);
+}
+
+//to edit reservation from the sidebar (Spreaadsheet UI) by staff, not using the reservation link with token
+
+function findReservationForStaffEdit(searchValue) {
+  const keyword = String(searchValue || "").trim();
+  if (!keyword) {
+    throw new Error("Please enter a Reservation ID or phone number.");
+  }
+
+  const sheet = getReservationSheet_();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    throw new Error("No reservations found.");
+  }
+
+  const values = sheet.getRange(2, 1, lastRow - 1, COL.TOKEN_EXPIRES_AT).getValues();
+  const normalizedKeyword = keyword.toLowerCase();
+  const normalizedPhoneKeyword = normalizePhoneForLimit_(keyword);
+
+  for (let i = values.length - 1; i >= 0; i--) {
+    const row = values[i];
+    const record = getReservationRecord_(row);
+
+    const rowResId = String(record.id || "").trim().toLowerCase();
+    const rowPhone = normalizePhoneForLimit_(record.phone || "");
+
+    if (
+      rowResId === normalizedKeyword ||
+      (normalizedPhoneKeyword && rowPhone === normalizedPhoneKeyword)
+    ) {
+      return {
+        rowNumber: i + 2,
+        reservation: record
+      };
+    }
+  }
+
+  throw new Error("Reservation not found.");
+}
+
+function updateReservationByStaff(form) {
+  const rowNumber = Number(form.rowNumber || 0);
+  if (!rowNumber) {
+    throw new Error("Missing reservation row.");
+  }
+
+  const sheet = getReservationSheet_();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+
+  try {
+    const currentRow = sheet.getRange(rowNumber, 1, 1, COL.TOKEN_EXPIRES_AT).getValues()[0];
+    const current = getReservationRecord_(currentRow);
+
+    if (!current.id) {
+      throw new Error("Reservation not found.");
+    }
+
+    if (String(current.status || "").toUpperCase().trim() === "CANCELLED") {
+      throw new Error("Cancelled reservations cannot be edited.");
+    }
+
+    const updatedPayload = {
+      firstName: String(form.firstName || "").trim(),
+      lastName: String(form.lastName || "").trim(),
+      email: String(form.email || "").trim(),
+      phone: String(form.phone || "").trim(),
+      date: String(form.date || "").trim(),
+      time: String(form.time || "").trim(),
+      adults: Number(form.adults || 0),
+      children: Number(form.children || 0),
+      notes: String(form.notes || "").trim()
+    };
+
+    validateReservationPayload_(updatedPayload);
+
+    if (isPastReservation_(updatedPayload.date, updatedPayload.time)) {
+      throw new Error("You cannot move a reservation to a past date/time.");
+    }
+
+    const blockState = getBlockStateForDate_(updatedPayload.date);
+    if (blockState.closedAllDay) {
+      throw new Error("This date is unavailable. Please choose another date.");
+    }
+
+    if (blockState.blockedSlots[`${updatedPayload.date}|${updatedPayload.time}`]) {
+      throw new Error("This time slot is blocked. Please choose another time.");
+    }
+
+    const paxByTime = getPaxByTimeForDate_(updatedPayload.date);
+
+    if (current.date === updatedPayload.date && current.time === updatedPayload.time) {
+      paxByTime[updatedPayload.time] =
+        Math.max(0, (paxByTime[updatedPayload.time] || 0) - (current.adults + current.children));
+    }
+
+    const newPax = updatedPayload.adults + updatedPayload.children;
+    const currentPax = paxByTime[updatedPayload.time] || 0;
+
+    if (currentPax + newPax > MAX_PAX_PER_SLOT) {
+      throw new Error("This time slot is fully booked (capacity reached). Please choose another time.");
+    }
+
+    const now = getNow_();
+    const newManageToken = getManageToken_();
+    const newTokenExpiresAt = getTokenExpiryForReservation_(updatedPayload.date, updatedPayload.time);
+
+    sheet.getRange(rowNumber, COL.FIRST_NAME).setValue(updatedPayload.firstName);
+    sheet.getRange(rowNumber, COL.LAST_NAME).setValue(updatedPayload.lastName);
+    sheet.getRange(rowNumber, COL.EMAIL).setValue(updatedPayload.email);
+    sheet.getRange(rowNumber, COL.PHONE).setValue(updatedPayload.phone);
+    sheet.getRange(rowNumber, COL.DATE).setValue(updatedPayload.date);
+    sheet.getRange(rowNumber, COL.TIME).setValue(updatedPayload.time);
+    sheet.getRange(rowNumber, COL.ADULTS).setValue(updatedPayload.adults);
+    sheet.getRange(rowNumber, COL.CHILDREN).setValue(updatedPayload.children);
+    sheet.getRange(rowNumber, COL.NOTES).setValue(updatedPayload.notes);
+    sheet.getRange(rowNumber, COL.MANAGE_TOKEN).setValue(newManageToken);
+    sheet.getRange(rowNumber, COL.TOKEN_EXPIRES_AT).setValue(newTokenExpiresAt);
+    sheet.getRange(rowNumber, COL.UPDATED_AT).setValue(now);
+
+    const oldData = {
+      date: current.date,
+      time: current.time,
+      adults: current.adults,
+      children: current.children,
+      notes: current.notes
+    };
+
+    if (updatedPayload.email) {
+      sendReservationUpdatedEmail_(current.id, newManageToken, updatedPayload, oldData);
+    }
+
+    sendStaffNotificationEmail_("UPDATE", current.id, updatedPayload, oldData);
+
+    return {
+      ok: true,
+      reservationId: current.id,
+      message: "Reservation updated successfully."
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+//Cancel reservation by staff from the spreadsheet UI, not using the reservation link with token
+
+function cancelReservationByStaff(rowNumber) {
+
+  const row = Number(rowNumber || 0);
+  if (!row) throw new Error("Invalid reservation row.");
+
+  const sheet = getReservationSheet_();
+  const values = sheet.getRange(row, 1, 1, COL.TOKEN_EXPIRES_AT).getValues()[0];
+  const record = getReservationRecord_(values);
+
+  if (!record.id) {
+    throw new Error("Reservation not found.");
+  }
+
+  if (String(record.status || "").toUpperCase() === "CANCELLED") {
+    throw new Error("Reservation already cancelled.");
+  }
+
+  const now = getNow_();
+
+  sheet.getRange(row, COL.STATUS).setValue("CANCELLED");
+  sheet.getRange(row, COL.CANCELLED_AT).setValue(now);
+  sheet.getRange(row, COL.UPDATED_AT).setValue(now);
+  sheet.getRange(row, COL.MANAGE_TOKEN).setValue("");
+  sheet.getRange(row, COL.TOKEN_EXPIRES_AT).setValue("");
+
+  const payload = {
+    firstName: record.firstName,
+    lastName: record.lastName,
+    email: record.email,
+    phone: record.phone,
+    date: record.date,
+    time: record.time,
+    adults: record.adults,
+    children: record.children,
+    notes: record.notes
+  };
+
+  if (payload.email) {
+    sendReservationCancelledEmail_(record.id, payload);
+  }
+
+  sendStaffNotificationEmail_("CANCEL", record.id, payload);
+
+  return { ok: true };
 }
