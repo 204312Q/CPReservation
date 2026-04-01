@@ -2,7 +2,9 @@ const RESERVATION_SHEET_NAME = "Joo Chiat Reservation";
 const BLOCKING_SHEET_NAME = "Joo Chiat_Blocking";
 const PUBLIC_HOLIDAY_SHEET_NAME = "Public Holiday";
 const SPREADSHEET_ID = "1KMhTLxhmrvz-ili7oj8NMrC-wTSxT-x7fqjEtNeHdNo";
-const MAX_PAX_PER_SLOT = 60;
+
+const MAX_PAX_IN_90_MIN = 50;
+const WINDOW_MINUTES = 90;
 const MAX_PAX_PER_RESERVATION = 10;
 const STAFF_NOTIFICATION_EMAIL = "chillipadinonyarestaurant63@gmail.com";
 
@@ -103,7 +105,22 @@ function normalizeTimeStr_(v) {
   if (v instanceof Date) {
     return Utilities.formatDate(v, Session.getScriptTimeZone(), "HH:mm");
   }
+
   const s = String(v || "").trim();
+  if (!s) return "";
+
+  const parsed = new Date("1970-01-01 " + s);
+  if (!isNaN(parsed.getTime())) {
+    return Utilities.formatDate(parsed, Session.getScriptTimeZone(), "HH:mm");
+  }
+
+  const m = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (m) {
+    const hh = String(Number(m[1])).padStart(2, "0");
+    const mm = m[2];
+    return `${hh}:${mm}`;
+  }
+
   return s.length >= 5 ? s.slice(0, 5) : s;
 }
 
@@ -281,12 +298,63 @@ function isPastReservation_(dateStr, timeStr) {
   return dt.getTime() < Date.now();
 }
 
+function timeToMinutes_(hhmm) {
+  const clean = normalizeTimeStr_(hhmm);
+  const parts = clean.split(":").map(Number);
+  return (parts[0] * 60) + parts[1];
+}
+
+function minutesToTime_(mins) {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
+}
+
 // Form Validation
 function validateReservationPayload_(payload) {
   if (!payload.firstName || !payload.lastName || !payload.phone || !payload.date || !payload.time) {
     throw new Error("Missing required fields.");
   }
 
+  // ===== PHONE (STRICT 8 DIGITS) =====
+  const phoneDigits = String(payload.phone || "").replace(/\D/g, "");
+  if (!/^\d{8}$/.test(phoneDigits)) {
+    throw new Error("Phone number must be exactly 8 digits.");
+  }
+
+  // ===== EMAIL =====
+  if (payload.email) {
+    const email = String(payload.email).trim();
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    if (!emailOk) {
+      throw new Error("Please enter a valid email address.");
+    }
+  }
+
+  // ===== NAME VALIDATION (BLOCK XSS) =====
+  const nameRegex = /^[A-Za-z0-9 .,'-]{1,80}$/;
+
+  if (!nameRegex.test(payload.firstName)) {
+    throw new Error("First name contains invalid characters.");
+  }
+
+  if (!nameRegex.test(payload.lastName)) {
+    throw new Error("Last name contains invalid characters.");
+  }
+
+  // ===== NOTES (BLOCK SCRIPT/HTML) =====
+  const notes = String(payload.notes || "");
+
+  if (notes.length > 500) {
+    throw new Error("Additional request is too long.");
+  }
+
+  // Block HTML tags completely
+  if (/<[^>]*>/.test(notes)) {
+    throw new Error("Additional request contains invalid characters.");
+  }
+
+  // ===== PAX =====
   const pax = Number(payload.pax || 0);
 
   if (pax <= 0) {
@@ -364,13 +432,7 @@ function getBlockStateForDate_(dateStr) {
   const toTimeStr = (t) => {
     if (!t) return "";
     if (t instanceof Date) return Utilities.formatDate(t, tz, "HH:mm");
-    const s = String(t).trim();
-    return s.length >= 5 ? s.slice(0, 5) : s;
-  };
-
-  const toMinutes = (hhmm) => {
-    const [h, m] = hhmm.split(":").map(Number);
-    return h * 60 + m;
+    return normalizeTimeStr_(t);
   };
 
   const interval = 15;
@@ -392,13 +454,11 @@ function getBlockStateForDate_(dateStr) {
     }
 
     if (start && end) {
-      const startMin = toMinutes(start);
-      const endMin = toMinutes(end);
+      const startMin = timeToMinutes_(start);
+      const endMin = timeToMinutes_(end);
 
       for (let t = startMin; t <= endMin; t += interval) {
-        const hh = String(Math.floor(t / 60)).padStart(2, "0");
-        const mm = String(t % 60).padStart(2, "0");
-        blockedSlots[`${dateStr}|${hh}:${mm}`] = true;
+        blockedSlots[`${dateStr}|${minutesToTime_(t)}`] = true;
       }
     }
   }
@@ -429,15 +489,9 @@ function getPaxByTimeForDate_(dateStr) {
 
     if (rowDateStr !== dateStr) continue;
 
-    let timeStr;
-    if (timeCell instanceof Date) {
-      timeStr = Utilities.formatDate(timeCell, Session.getScriptTimeZone(), "HH:mm");
-    } else {
-      const s = String(timeCell).trim();
-      timeStr = s.length >= 5 ? s.slice(0, 5) : s;
-    }
-
+    const timeStr = normalizeTimeStr_(timeCell);
     const pax = Number(r[COL.PAX - 1] || 0);
+
     paxByTime[timeStr] = (paxByTime[timeStr] || 0) + pax;
   }
 
@@ -471,13 +525,7 @@ function isPublicHoliday(dateStr) {
   return Boolean(phMap[dateStr]);
 }
 
-function getAvailableTimes(dateStr) {
-  const blockState = getBlockStateForDate_(dateStr);
-  if (blockState.closedAllDay) return [];
-
-  const blockedMap = blockState.blockedSlots;
-  const paxByTime = getPaxByTimeForDate_(dateStr);
-
+function getAllBookableTimes_(dateStr) {
   const dateObj = new Date(dateStr + "T00:00:00");
   let day = dateObj.getDay();
 
@@ -486,11 +534,6 @@ function getAvailableTimes(dateStr) {
   }
 
   const isWeekend = (day === 0 || day === 6);
-
-  const toMinutes = (t) => {
-    const [h, m] = t.split(":").map(Number);
-    return h * 60 + m;
-  };
 
   const lunch = { start: "11:30", end: "14:15" };
   const dinner = isWeekend
@@ -502,24 +545,92 @@ function getAvailableTimes(dateStr) {
   const results = [];
 
   for (const p of periods) {
-    const startMinutes = toMinutes(p.start);
-    const endMinutes = toMinutes(p.end);
+    const startMinutes = timeToMinutes_(p.start);
+    const endMinutes = timeToMinutes_(p.end);
 
     for (let t = startMinutes; t <= endMinutes; t += interval) {
-      const hh = String(Math.floor(t / 60)).padStart(2, "0");
-      const mm = String(t % 60).padStart(2, "0");
-      const timeStr = `${hh}:${mm}`;
-
-      if (blockedMap[`${dateStr}|${timeStr}`]) continue;
-
-      const currentPax = paxByTime[timeStr] || 0;
-      if (currentPax >= MAX_PAX_PER_SLOT) continue;
-
-      results.push(timeStr);
+      results.push(minutesToTime_(t));
     }
   }
 
   return results;
+}
+
+function getRollingWindowPax_(candidateTime, paxByTime) {
+  const start = timeToMinutes_(candidateTime);
+  const end = start + WINDOW_MINUTES;
+
+  let total = 0;
+
+  Object.keys(paxByTime).forEach(function(timeStr) {
+    const mins = timeToMinutes_(timeStr);
+    if (mins >= start && mins < end) {
+      total += Number(paxByTime[timeStr]) || 0;
+    }
+  });
+
+  return total;
+}
+
+function canBookTime_(dateStr, timeStr, incomingPax, excludeReservationId) {
+  const reservation = getReservationSheet_();
+  const lastRow = reservation.getLastRow();
+  const paxByTime = {};
+
+  if (lastRow >= 2) {
+    const values = reservation.getRange(2, 1, lastRow - 1, COL.TOKEN_EXPIRES_AT).getValues();
+
+    for (const r of values) {
+      const rowReservationId = String(r[COL.RES_ID - 1] || "").trim();
+      const status = String(r[COL.STATUS - 1] || "").toUpperCase().trim();
+      const dateCell = r[COL.DATE - 1];
+      const timeCell = r[COL.TIME - 1];
+
+      if (!dateCell || !timeCell) continue;
+      if (status === "CANCELLED" || status === "NO-SHOW") continue;
+      if (excludeReservationId && rowReservationId === String(excludeReservationId).trim()) continue;
+
+      const rowDateStr = (dateCell instanceof Date)
+        ? Utilities.formatDate(dateCell, Session.getScriptTimeZone(), "yyyy-MM-dd")
+        : String(dateCell).trim();
+
+      if (rowDateStr !== dateStr) continue;
+
+      const rowTime = normalizeTimeStr_(timeCell);
+      const rowPax = Number(r[COL.PAX - 1] || 0);
+
+      paxByTime[rowTime] = (paxByTime[rowTime] || 0) + rowPax;
+    }
+  }
+
+  paxByTime[timeStr] = (paxByTime[timeStr] || 0) + (Number(incomingPax) || 0);
+
+  const rollingPax = getRollingWindowPax_(timeStr, paxByTime);
+  return rollingPax < MAX_PAX_IN_90_MIN;
+}
+
+function getAvailableTimes(dateStr) {
+  const cleanDate = String(dateStr || "").trim();
+  if (!cleanDate) return [];
+
+  const blockState = getBlockStateForDate_(cleanDate);
+  if (blockState.closedAllDay) return [];
+
+  const blockedMap = blockState.blockedSlots;
+  const paxByTime = getPaxByTimeForDate_(cleanDate);
+  const allTimes = getAllBookableTimes_(cleanDate);
+
+  return allTimes.map(function(timeStr) {
+    const isBlocked = !!blockedMap[`${cleanDate}|${timeStr}`];
+    const currentWindowPax = getRollingWindowPax_(timeStr, paxByTime);
+    const available = !isBlocked && currentWindowPax < MAX_PAX_IN_90_MIN;
+
+    return {
+      time: timeStr,
+      available: available,
+      currentWindowPax: currentWindowPax
+    };
+  });
 }
 
 function submitReservation(payload) {
@@ -533,32 +644,32 @@ function submitReservation(payload) {
   lock.waitLock(20000);
 
   try {
-    const blockState = getBlockStateForDate_(payload.date);
+    const cleanDate = String(payload.date || "").trim();
+    const cleanTime = normalizeTimeStr_(payload.time);
+    const incomingPax = Number(payload.pax || 0);
+
+    const blockState = getBlockStateForDate_(cleanDate);
 
     if (blockState.closedAllDay) {
       throw new Error("This date is unavailable. Please choose another date.");
     }
 
-    if (blockState.blockedSlots[`${payload.date}|${payload.time}`]) {
+    if (blockState.blockedSlots[`${cleanDate}|${cleanTime}`]) {
       throw new Error("This time slot is blocked. Please choose another time.");
     }
 
-    if (isPastReservation_(payload.date, payload.time)) {
+    if (isPastReservation_(cleanDate, cleanTime)) {
       throw new Error("You cannot create a reservation in the past.");
     }
 
-    const paxByTime = getPaxByTimeForDate_(payload.date);
-    const currentPax = paxByTime[payload.time] || 0;
-    const incomingPax = Number(payload.pax || 0);
-
-    if (currentPax + incomingPax > MAX_PAX_PER_SLOT) {
-      throw new Error("This time slot is fully booked (capacity reached). Please choose another time.");
+    if (!canBookTime_(cleanDate, cleanTime, incomingPax, null)) {
+      throw new Error("This time is unavailable because the 90-minute pax limit has been reached. Please choose another time.");
     }
 
     const reservationId = getReservationID();
     const manageToken = getManageToken_();
     const now = getNow_();
-    const tokenExpiresAt = getTokenExpiryForReservation_(payload.date, payload.time);
+    const tokenExpiresAt = getTokenExpiryForReservation_(cleanDate, cleanTime);
 
     reservation.appendRow([
       reservationId,               // A Reservation ID
@@ -567,9 +678,9 @@ function submitReservation(payload) {
       payload.lastName,            // D Last Name
       payload.email || "",         // E Email
       payload.phone,               // F Phone
-      payload.date,                // G Date
-      payload.time,                // H Time
-      Number(payload.pax || 0),    // I Total Pax
+      cleanDate,                   // G Date
+      cleanTime,                   // H Time
+      incomingPax,                 // I Total Pax
       payload.notes || "",         // J Additional Request
       manageToken,                 // K Manage Token
       now,                         // L Created At
@@ -578,8 +689,19 @@ function submitReservation(payload) {
       tokenExpiresAt               // O Token Expires At
     ]);
 
-    sendReservationEmail_(reservationId, manageToken, payload);
-    sendStaffNotificationEmail_("NEW", reservationId, payload);
+    const emailPayload = {
+      firstName: payload.firstName,
+      lastName: payload.lastName,
+      email: payload.email || "",
+      phone: payload.phone,
+      date: cleanDate,
+      time: cleanTime,
+      pax: incomingPax,
+      notes: payload.notes || ""
+    };
+
+    sendReservationEmail_(reservationId, manageToken, emailPayload);
+    sendStaffNotificationEmail_("NEW", reservationId, emailPayload);
 
     return { ok: true, reservationId };
   } finally {
@@ -1106,7 +1228,7 @@ function updateReservation(form) {
       email: current.email,
       phone: current.phone,
       date: String(form.date || "").trim(),
-      time: String(form.time || "").trim(),
+      time: normalizeTimeStr_(form.time),
       pax: Number(form.pax != null ? form.pax : current.pax),
       notes: form.notes != null ? form.notes : current.notes
     };
@@ -1128,15 +1250,7 @@ function updateReservation(form) {
       throw new Error("This time slot is blocked. Please choose another time.");
     }
 
-    const paxByTime = getPaxByTimeForDate_(updatedPayload.date);
-
-    if (current.date === updatedPayload.date && current.time === updatedPayload.time) {
-      paxByTime[updatedPayload.time] =
-        Math.max(0, (paxByTime[updatedPayload.time] || 0) - current.pax);
-    }
-
     const newPax = Number(updatedPayload.pax || 0);
-    const currentPax = paxByTime[updatedPayload.time] || 0;
 
     if (newPax <= 0) {
       throw new Error("Please select at least 1 guest.");
@@ -1146,8 +1260,8 @@ function updateReservation(form) {
       throw new Error("Guest count exceeds allowed maximum, Max 10 Pax.");
     }
 
-    if (currentPax + newPax > MAX_PAX_PER_SLOT) {
-      throw new Error("This time slot is fully booked (capacity reached). Please choose another time.");
+    if (!canBookTime_(updatedPayload.date, updatedPayload.time, newPax, resId)) {
+      throw new Error("This time is unavailable because the 90-minute pax limit has been reached. Please choose another time.");
     }
 
     const sheet = getReservationSheet_();
@@ -1294,7 +1408,7 @@ function createOfflineReservation(form) {
     email: String(form.email || "").trim(),
     phone: String(form.phone || "").trim(),
     date: String(form.date || "").trim(),
-    time: String(form.time || "").trim(),
+    time: normalizeTimeStr_(form.time),
     pax: Number(form.pax || 0),
     notes: String(form.notes || "").trim()
   };
@@ -1320,12 +1434,8 @@ function createOfflineReservation(form) {
       throw new Error("You cannot create a reservation in the past.");
     }
 
-    const paxByTime = getPaxByTimeForDate_(payload.date);
-    const currentPax = paxByTime[payload.time] || 0;
-    const incomingPax = Number(payload.pax || 0);
-
-    if (currentPax + incomingPax > MAX_PAX_PER_SLOT) {
-      throw new Error("This time slot is fully booked (capacity reached). Please choose another time.");
+    if (!canBookTime_(payload.date, payload.time, payload.pax, null)) {
+      throw new Error("This time is unavailable because the 90-minute pax limit has been reached. Please choose another time.");
     }
 
     const reservationId = getReservationID();
@@ -1488,7 +1598,7 @@ function updateReservationByStaff(form) {
       email: String(form.email || "").trim(),
       phone: String(form.phone || "").trim(),
       date: String(form.date || "").trim(),
-      time: String(form.time || "").trim(),
+      time: normalizeTimeStr_(form.time),
       pax: Number(form.pax || 0),
       notes: String(form.notes || "").trim(),
       status: updatedStatus
@@ -1509,18 +1619,8 @@ function updateReservationByStaff(form) {
       throw new Error("This time slot is blocked. Please choose another time.");
     }
 
-    const paxByTime = getPaxByTimeForDate_(updatedPayload.date);
-
-    if (current.date === updatedPayload.date && current.time === updatedPayload.time) {
-      paxByTime[updatedPayload.time] =
-        Math.max(0, (paxByTime[updatedPayload.time] || 0) - current.pax);
-    }
-
-    const newPax = Number(updatedPayload.pax || 0);
-    const currentPax = paxByTime[updatedPayload.time] || 0;
-
-    if (currentPax + newPax > MAX_PAX_PER_SLOT) {
-      throw new Error("This time slot is fully booked (capacity reached). Please choose another time.");
+    if (!canBookTime_(updatedPayload.date, updatedPayload.time, updatedPayload.pax, current.id)) {
+      throw new Error("This time is unavailable because the 90-minute pax limit has been reached. Please choose another time.");
     }
 
     const now = getNow_();
@@ -1641,8 +1741,8 @@ function createBlockingEntry(form) {
 
   const date = String(form.date || "").trim();
   const blockType = String(form.blockType || "").trim();
-  const startTime = String(form.startTime || "").trim();
-  const endTime = String(form.endTime || "").trim();
+  const startTime = normalizeTimeStr_(form.startTime);
+  const endTime = normalizeTimeStr_(form.endTime);
   const reason = String(form.reason || "").trim() || "Blocked";
 
   if (!date) {
@@ -1656,7 +1756,7 @@ function createBlockingEntry(form) {
     if (!startTime || !endTime) {
       throw new Error("Start time and end time are required.");
     }
-    if (startTime >= endTime) {
+    if (timeToMinutes_(startTime) >= timeToMinutes_(endTime)) {
       throw new Error("End time must be later than start time.");
     }
     finalStart = startTime;
@@ -1700,11 +1800,11 @@ function getBlockingEntriesByDate(dateStr) {
 
       const start = row[1] instanceof Date
         ? Utilities.formatDate(row[1], tz, "HH:mm")
-        : String(row[1] || "").trim();
+        : normalizeTimeStr_(row[1]);
 
       const end = row[2] instanceof Date
         ? Utilities.formatDate(row[2], tz, "HH:mm")
-        : String(row[2] || "").trim();
+        : normalizeTimeStr_(row[2]);
 
       return {
         rowNumber: index + 2,

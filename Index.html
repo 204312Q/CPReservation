@@ -219,6 +219,11 @@
       color: #6b7280;
       cursor: not-allowed;
     }
+
+    select option:disabled {
+      color: #9ca3af;
+      background: #f3f4f6;
+    }
   </style>
 </head>
 
@@ -252,12 +257,14 @@
         <div class="grid grid-2">
           <div>
             <label>First Name*
-              <input name="firstName" required autocomplete="given-name" value="<?= res ? res.firstName : '' ?>" <?= res ? 'readonly' : '' ?> />
+              <input name="firstName" required autocomplete="given-name" value="<?= res ? res.firstName : '' ?>" <?=res
+                ? 'readonly' : '' ?> />
             </label>
           </div>
           <div>
             <label>Last Name*
-              <input name="lastName" required autocomplete="family-name" value="<?= res ? res.lastName : '' ?>" <?= res ? 'readonly' : '' ?> />
+              <input name="lastName" required autocomplete="family-name" value="<?= res ? res.lastName : '' ?>" <?=res
+                ? 'readonly' : '' ?> />
             </label>
           </div>
         </div>
@@ -265,14 +272,15 @@
         <div class="grid grid-2" style="margin-top:12px;">
           <div>
             <label>Phone*
-              <input name="phone" required inputmode="tel" autocomplete="tel" placeholder="e.g. 91234567"
-                value="<?= res ? res.phone : '' ?>" <?= res ? 'readonly' : '' ?> />
+              <<input name="phone" required inputmode="numeric" pattern="\d{8}" maxlength="8"
+                placeholder="e.g. 91234567" title="Enter exactly 8 digits" autocomplete="tel"
+                value="<?= res ? res.phone : '' ?>" <?=res ? 'readonly' : '' ?> />
             </label>
           </div>
           <div>
             <label>Email*
               <input name="email" required type="email" autocomplete="email" placeholder="e.g. john.doe@example.com"
-                value="<?= res ? res.email : '' ?>" <?= res ? 'readonly' : '' ?> />
+                value="<?= res ? res.email : '' ?>" <?=res ? 'readonly' : '' ?> />
             </label>
           </div>
         </div>
@@ -296,14 +304,24 @@
         <div class="grid" style="margin-top:12px;">
           <div>
             <label>Total Pax*
-              <input name="pax" id="paxInput" type="number" min="1" max="10" required
-                value="<?= res ? res.pax : 2 ?>" <?= res ? 'readonly' : '' ?> />
+              <select name="pax" id="paxInput" required <?=res ? 'disabled' : '' ?>>
+                <? for (let i = 1; i <= 10; i++) { ?>
+                <option value="<?= i ?>" <?=(res ? Number(res.pax) : 2)===i ? 'selected' : '' ?>>
+                  <?= i ?> Pax
+                </option>
+                <? } ?>
+              </select>
+              <? if (res) { ?>
+              <input type="hidden" name="pax" value="<?= res ? res.pax : 2 ?>">
+              <? } ?>
             </label>
           </div>
         </div>
 
         <div class="row" style="margin-top:10px;">
-          <div class="hint">Total pax: <b id="totalPax"><?= res ? Number(res.pax || 0) : 2 ?></b></div>
+          <div class="hint">Total pax: <b id="totalPax">
+              <?= res ? Number(res.pax || 0) : 2 ?>
+            </b></div>
           <div class="hint right" id="capacityHint"></div>
         </div>
 
@@ -315,11 +333,11 @@
         </div>
 
         <div class="actions">
-          <button id="submitBtn" type="submit" <?= errorMessage ? 'disabled' : '' ?>>
+          <button id="submitBtn" type="submit" <?=errorMessage ? 'disabled' : '' ?>>
             <?= res ? 'Update Reservation' : 'Submit Reservation' ?>
           </button>
           <? if (res) { ?>
-          <button id="cancelBtn" type="button" onclick="handleCancel()" <?= errorMessage ? 'disabled' : '' ?>>
+          <button id="cancelBtn" type="button" onclick="handleCancel()" <?=errorMessage ? 'disabled' : '' ?>>
             Cancel Reservation
           </button>
           <? } ?>
@@ -336,6 +354,7 @@
     const statusPill = document.getElementById('statusPill');
     const msgEl = document.getElementById('msg');
     const timeSel = document.querySelector('[name="time"]');
+    const capacityHintEl = document.getElementById('capacityHint');
 
     const manageResId = "<?= res ? res.id : '' ?>";
     const manageToken = "<?= token ? token : '' ?>";
@@ -397,6 +416,57 @@
       p.addEventListener('input', revertIfChanged);
     }
 
+    function renderTimeOptions(times) {
+      if (!times || times.length === 0) {
+        timeSel.innerHTML = '<option value="">No slots available</option>';
+        timeSel.disabled = true;
+        capacityHintEl.textContent = '';
+        setStatus('No slots');
+        return;
+      }
+
+      let html = '<option value="">Select a time</option>';
+
+      times.forEach(slot => {
+        const time = escapeHtml(slot.time || '');
+        const currentWindowPax = Number(slot.currentWindowPax || 0);
+
+        if (slot.available) {
+          html += `<option value="${time}" data-pax="${currentWindowPax}">${time}</option>`;
+        } else {
+          html += `<option value="${time}" data-pax="${currentWindowPax}" disabled>${time} - Unavailable</option>`;
+        }
+      });
+
+      timeSel.innerHTML = html;
+      timeSel.disabled = false;
+
+      if (isManageMode && savedTime) {
+        const savedOption = Array.from(timeSel.options).find(opt => opt.value === savedTime);
+        if (savedOption) {
+          timeSel.value = savedTime;
+        }
+      }
+
+      updateCapacityHint();
+      setStatus('Ready');
+    }
+
+    function updateCapacityHint() {
+      const selected = timeSel.options[timeSel.selectedIndex];
+      if (!selected || !selected.value) {
+        capacityHintEl.textContent = '';
+        return;
+      }
+
+      const pax = selected.dataset.pax;
+      if (pax !== undefined && pax !== '') {
+        capacityHintEl.textContent = `90-min window pax: ${pax}`;
+      } else {
+        capacityHintEl.textContent = '';
+      }
+    }
+
     function loadTimes() {
       clearMsg();
       setStatus('Loading slots…');
@@ -406,37 +476,24 @@
       if (!date) {
         timeSel.innerHTML = '<option value="">Select a date first</option>';
         timeSel.disabled = true;
+        capacityHintEl.textContent = '';
         setStatus('Ready');
         return;
       }
 
       timeSel.disabled = true;
       timeSel.innerHTML = '<option value="">Loading…</option>';
+      capacityHintEl.textContent = '';
 
       google.script.run
         .withSuccessHandler(times => {
-          if (!times || times.length === 0) {
-            timeSel.innerHTML = '<option value="">No slots available</option>';
-            timeSel.disabled = true;
-            setStatus('No slots');
-            return;
-          }
-
-          timeSel.innerHTML =
-            '<option value="">Select a time</option>' +
-            times.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
-          timeSel.disabled = false;
-
-          if (isManageMode && savedTime) {
-            timeSel.value = savedTime;
-          }
-
-          setStatus('Ready');
+          renderTimeOptions(times);
         })
         .withFailureHandler(err => {
           setMsg(err.message || String(err), false);
           timeSel.innerHTML = '<option value="">Error loading slots</option>';
           timeSel.disabled = true;
+          capacityHintEl.textContent = '';
           setStatus('Error');
         })
         .getAvailableTimes(date);
@@ -444,7 +501,10 @@
 
     function basicValidate(data) {
       const digits = (data.phone || '').replace(/\D/g, '');
-      if (digits.length < 8) return 'Phone number looks too short.';
+
+      if (!/^\d{8}$/.test(digits)) {
+        return 'Phone number must be exactly 8 digits.';
+      }
 
       const pax = Number(data.pax || 0);
 
@@ -493,6 +553,7 @@
         f.reset();
         timeSel.innerHTML = '<option value="">Select a date first</option>';
         timeSel.disabled = true;
+        capacityHintEl.textContent = '';
         document.getElementById('paxInput').value = 2;
         updateTotal();
         disableForm(false);
@@ -574,6 +635,7 @@
     }
 
     document.getElementById('paxInput').addEventListener('input', updateTotal);
+    timeSel.addEventListener('change', updateCapacityHint);
 
     lockPaxFields();
     updateTotal();
