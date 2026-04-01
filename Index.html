@@ -307,7 +307,7 @@
               <select name="pax" id="paxInput" required <?=res ? 'disabled' : '' ?>>
                 <? for (let i = 1; i <= 10; i++) { ?>
                 <option value="<?= i ?>" <?=(res ? Number(res.pax) : 2)===i ? 'selected' : '' ?>>
-                  <?= i ?> Pax
+                  <?= i ?>
                 </option>
                 <? } ?>
               </select>
@@ -316,13 +316,6 @@
               <? } ?>
             </label>
           </div>
-        </div>
-
-        <div class="row" style="margin-top:10px;">
-          <div class="hint">Total pax: <b id="totalPax">
-              <?= res ? Number(res.pax || 0) : 2 ?>
-            </b></div>
-          <div class="hint right" id="capacityHint"></div>
         </div>
 
         <div style="margin-top:12px;">
@@ -379,11 +372,6 @@
       msgEl.style.display = 'none';
     }
 
-    function updateTotal() {
-      const pax = Number(document.querySelector('[name="pax"]').value || 0);
-      document.getElementById('totalPax').textContent = pax;
-    }
-
     function disableForm(disabled) {
       [...document.querySelectorAll('input, select, textarea, button')].forEach(el => {
         el.disabled = disabled;
@@ -410,7 +398,7 @@
 
       const revertIfChanged = () => {
         if (Number(p.value || 0) !== origP) p.value = origP;
-        updateTotal();
+        
       };
 
       p.addEventListener('input', revertIfChanged);
@@ -634,11 +622,9 @@
       if (preDate) loadTimes();
     }
 
-    document.getElementById('paxInput').addEventListener('input', updateTotal);
     timeSel.addEventListener('change', updateCapacityHint);
 
     lockPaxFields();
-    updateTotal();
 
     if (hasPageError) {
       setStatus('Invalid link');
