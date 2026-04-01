@@ -51,7 +51,7 @@
       gap: 10px;
     }
 
-    .row>div {
+    .row > div {
       flex: 1;
       min-width: 0;
     }
@@ -88,12 +88,18 @@
       font-size: 15px;
     }
 
+    button:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+    }
+
     .msg {
       margin-top: 12px;
       padding: 10px;
       border-radius: 6px;
       font-size: 13px;
       display: none;
+      white-space: pre-wrap;
     }
 
     .msg.success {
@@ -106,6 +112,12 @@
       display: block;
       background: #fdeaea;
       color: #8b1e1e;
+    }
+
+    .hint {
+      margin-top: 6px;
+      font-size: 12px;
+      color: #666;
     }
   </style>
 </head>
@@ -140,25 +152,20 @@
         <label>Time</label>
         <div class="select-wrap">
           <select name="time" id="timeSelect" required>
-            <option value="">Select a time</option>
+            <option value="">Select a date first</option>
           </select>
         </div>
       </div>
     </div>
 
-    <div class="row">
-      <div>
-        <label>Adults</label>
-        <input name="adults" type="number" min="0" value="1" required>
-      </div>
-      <div>
-        <label>Children</label>
-        <input name="children" type="number" min="0" value="0" required>
-      </div>
+    <div>
+      <label>Total Pax</label>
+      <input name="pax" id="paxInput" type="number" min="1" max="10" value="1" required>
+      <div class="hint">Allowed range: 1 to 10 pax</div>
     </div>
 
     <label>Additional Request</label>
-    <textarea name="AdditionalRequests"></textarea>
+    <textarea name="notes"></textarea>
 
     <button type="submit" id="submitBtn">Create Reservation</button>
   </form>
@@ -171,10 +178,16 @@
     const msg = document.getElementById("msg");
     const dateInput = document.getElementById("dateInput");
     const timeSelect = document.getElementById("timeSelect");
+    const paxInput = document.getElementById("paxInput");
 
     function showMessage(text, type) {
       msg.textContent = text;
       msg.className = "msg " + type;
+    }
+
+    function clearMessage() {
+      msg.textContent = "";
+      msg.className = "msg";
     }
 
     function setTimeOptions(times) {
@@ -201,8 +214,23 @@
       });
     }
 
+    function validateForm(data) {
+      const pax = Number(data.pax || 0);
+      if (pax < 1) return "Total pax must be at least 1.";
+      if (pax > 10) return "Maximum allowed is 10 pax.";
+
+      const digits = String(data.phone || "").replace(/\D/g, "");
+      if (digits.length < 8) return "Phone number looks too short.";
+
+      if (!data.date) return "Please select a date.";
+      if (!data.time) return "Please select a time.";
+
+      return null;
+    }
+
     dateInput.addEventListener("change", function () {
       const date = dateInput.value;
+      clearMessage();
 
       timeSelect.innerHTML = '<option value="">Loading...</option>';
 
@@ -222,19 +250,35 @@
         .getAvailableTimesForSidebar(date);
     });
 
+    paxInput.addEventListener("input", function () {
+      const value = Number(paxInput.value || 0);
+      if (value > 10) paxInput.value = 10;
+      if (value < 1 && paxInput.value !== "") {
+        // leave user typing alone unless they submit
+      }
+    });
+
     form.addEventListener("submit", function (e) {
       e.preventDefault();
       submitBtn.disabled = true;
-      msg.className = "msg";
-      msg.textContent = "";
+      clearMessage();
 
       const data = Object.fromEntries(new FormData(form).entries());
+      data.pax = Number(data.pax || 0);
+
+      const validationError = validateForm(data);
+      if (validationError) {
+        submitBtn.disabled = false;
+        showMessage(validationError, "error");
+        return;
+      }
 
       google.script.run
         .withSuccessHandler(function (res) {
           submitBtn.disabled = false;
           showMessage("Reservation created. ID: " + res.reservationId, "success");
           form.reset();
+          paxInput.value = 1;
           timeSelect.innerHTML = '<option value="">Select a date first</option>';
         })
         .withFailureHandler(function (err) {

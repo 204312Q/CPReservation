@@ -10,14 +10,14 @@
 
   <style>
     :root {
-      --bg: #f6f7fb;
+      --bg: #ffffff;
       --card: #ffffff;
       --text: #111827;
       --muted: #6b7280;
       --border: #e5e7eb;
       --good: #e7f7ee;
       --bad: #fdeaea;
-      --shadow: 0 10px 30px rgba(0, 0, 0, .08);
+      --shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
       --radius: 14px;
     }
 
@@ -33,9 +33,10 @@
     }
 
     .wrap {
-      max-width: 720px;
+      width: 100%;
+      max-width: 1100px;
       margin: 0 auto;
-      padding: 18px 14px 40px;
+      padding: 24px 20px 40px;
     }
 
     header {
@@ -51,22 +52,22 @@
     }
 
     .title h1 {
-      font-size: 20px;
+      font-size: 28px;
       margin: 0;
     }
 
     .title p {
-      margin: 6px 0 0;
+      margin: 8px 0 0;
       color: var(--muted);
-      font-size: 13px;
+      font-size: 15px;
     }
 
     .card {
-      background: var(--card);
-      border: 1px solid var(--border);
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
       border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      padding: 16px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+      padding: 24px;
     }
 
     .grid {
@@ -98,11 +99,11 @@
       width: 100%;
       border-radius: 12px;
       border: 1px solid var(--border);
-      padding: 11px 12px;
-      font-size: 14px;
+      padding: 13px 14px;
+      font-size: 15px;
       background: #fff;
       outline: none;
-      min-height: 44px;
+      min-height: 48px;
     }
 
     input:focus,
@@ -197,6 +198,7 @@
     }
 
     @media (max-width: 480px) {
+
       input,
       select,
       textarea {
@@ -240,20 +242,22 @@
         <input type="hidden" name="token" id="token" value="<?= token ? token : '' ?>">
 
         <? if (errorMessage) { ?>
-          <div id="msg" class="msg err" style="display:block;"><?= errorMessage ?></div>
+        <div id="msg" class="msg err" style="display:block;">
+          <?= errorMessage ?>
+        </div>
         <? } else { ?>
-          <div id="msg" class="msg"></div>
+        <div id="msg" class="msg"></div>
         <? } ?>
 
         <div class="grid grid-2">
           <div>
             <label>First Name*
-              <input name="firstName" required autocomplete="given-name" value="<?= res ? res.firstName : '' ?>" />
+              <input name="firstName" required autocomplete="given-name" value="<?= res ? res.firstName : '' ?>" <?= res ? 'readonly' : '' ?> />
             </label>
           </div>
           <div>
             <label>Last Name*
-              <input name="lastName" required autocomplete="family-name" value="<?= res ? res.lastName : '' ?>" />
+              <input name="lastName" required autocomplete="family-name" value="<?= res ? res.lastName : '' ?>" <?= res ? 'readonly' : '' ?> />
             </label>
           </div>
         </div>
@@ -262,13 +266,13 @@
           <div>
             <label>Phone*
               <input name="phone" required inputmode="tel" autocomplete="tel" placeholder="e.g. 91234567"
-                value="<?= res ? res.phone : '' ?>" />
+                value="<?= res ? res.phone : '' ?>" <?= res ? 'readonly' : '' ?> />
             </label>
           </div>
           <div>
             <label>Email*
               <input name="email" required type="email" autocomplete="email" placeholder="e.g. john.doe@example.com"
-                value="<?= res ? res.email : '' ?>" />
+                value="<?= res ? res.email : '' ?>" <?= res ? 'readonly' : '' ?> />
             </label>
           </div>
         </div>
@@ -289,25 +293,17 @@
           </div>
         </div>
 
-        <div class="grid grid-2" style="margin-top:12px;">
+        <div class="grid" style="margin-top:12px;">
           <div>
-            <label>Adults*
-              <input name="adults" id="adultsInput" type="number" min="1" required value="<?= res ? res.adults : 2 ?>"
-                oninput="updateTotal()" <?= res ? 'readonly' : '' ?> />
-            </label>
-          </div>
-          <div>
-            <label>Children
-              <input name="children" id="childrenInput" type="number" min="0" value="<?= res ? res.children : 0 ?>"
-                oninput="updateTotal()" <?= res ? 'readonly' : '' ?> />
+            <label>Total Pax*
+              <input name="pax" id="paxInput" type="number" min="1" max="10" required
+                value="<?= res ? res.pax : 2 ?>" <?= res ? 'readonly' : '' ?> />
             </label>
           </div>
         </div>
 
         <div class="row" style="margin-top:10px;">
-          <div class="hint">Total pax: <b id="totalPax">
-              <?= res ? (Number(res.adults || 0) + Number(res.children || 0)) : 2 ?>
-            </b></div>
+          <div class="hint">Total pax: <b id="totalPax"><?= res ? Number(res.pax || 0) : 2 ?></b></div>
           <div class="hint right" id="capacityHint"></div>
         </div>
 
@@ -365,9 +361,8 @@
     }
 
     function updateTotal() {
-      const adults = Number(document.querySelector('[name="adults"]').value || 0);
-      const children = Number(document.querySelector('[name="children"]').value || 0);
-      document.getElementById('totalPax').textContent = adults + children;
+      const pax = Number(document.querySelector('[name="pax"]').value || 0);
+      document.getElementById('totalPax').textContent = pax;
     }
 
     function disableForm(disabled) {
@@ -376,39 +371,30 @@
       });
 
       if (isManageMode) {
-        const a = document.getElementById('adultsInput');
-        const c = document.getElementById('childrenInput');
-        a.readOnly = true;
-        c.readOnly = true;
-        a.disabled = false;
-        c.disabled = false;
+        const p = document.getElementById('paxInput');
+        p.readOnly = true;
+        p.disabled = false;
       }
     }
 
     function lockPaxFields() {
       if (!isManageMode) return;
 
-      const a = document.getElementById('adultsInput');
-      const c = document.getElementById('childrenInput');
+      const p = document.getElementById('paxInput');
+      const origP = Number(p.value || 0);
 
-      const origA = Number(a.value || 0);
-      const origC = Number(c.value || 0);
-
-      [a, c].forEach(el => {
-        el.addEventListener('keydown', (e) => {
-          if (['ArrowUp', 'ArrowDown', '+', '-'].includes(e.key)) e.preventDefault();
-        });
-        el.addEventListener('wheel', (e) => e.preventDefault(), { passive: false });
+      p.addEventListener('keydown', (e) => {
+        if (['ArrowUp', 'ArrowDown', '+', '-'].includes(e.key)) e.preventDefault();
       });
 
+      p.addEventListener('wheel', (e) => e.preventDefault(), { passive: false });
+
       const revertIfChanged = () => {
-        if (Number(a.value || 0) !== origA) a.value = origA;
-        if (Number(c.value || 0) !== origC) c.value = origC;
+        if (Number(p.value || 0) !== origP) p.value = origP;
         updateTotal();
       };
 
-      a.addEventListener('input', revertIfChanged);
-      c.addEventListener('input', revertIfChanged);
+      p.addEventListener('input', revertIfChanged);
     }
 
     function loadTimes() {
@@ -460,11 +446,10 @@
       const digits = (data.phone || '').replace(/\D/g, '');
       if (digits.length < 8) return 'Phone number looks too short.';
 
-      const adults = Number(data.adults || 0);
-      const children = Number(data.children || 0);
+      const pax = Number(data.pax || 0);
 
-      if (adults < 1) return 'Adults must be at least 1.';
-      if (children < 0) return 'Children cannot be negative.';
+      if (pax < 1) return 'Total pax must be at least 1.';
+      if (pax > 10) return 'Maximum allowed is 10 pax.';
       if (!data.date) return 'Please select a date.';
       if (!data.time) return 'Please select a time.';
 
@@ -482,8 +467,7 @@
 
       const f = document.getElementById('f');
       const data = Object.fromEntries(new FormData(f).entries());
-      data.adults = Number(data.adults || 0);
-      data.children = Number(data.children || 0);
+      data.pax = Number(data.pax || 0);
 
       const err = basicValidate(data);
       if (err) {
@@ -509,6 +493,7 @@
         f.reset();
         timeSel.innerHTML = '<option value="">Select a date first</option>';
         timeSel.disabled = true;
+        document.getElementById('paxInput').value = 2;
         updateTotal();
         disableForm(false);
       };
@@ -588,6 +573,8 @@
       if (preDate) loadTimes();
     }
 
+    document.getElementById('paxInput').addEventListener('input', updateTotal);
+
     lockPaxFields();
     updateTotal();
 
@@ -596,4 +583,5 @@
     }
   </script>
 </body>
+
 </html>

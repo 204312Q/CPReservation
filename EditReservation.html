@@ -1,340 +1,277 @@
 <!DOCTYPE html>
 <html>
-
 <head>
-    <base target="_top">
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            padding: 16px;
-            color: #333;
-            background: #eef1f5;
-        }
+  <base target="_top">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 16px;
+      color: #333;
+      background: #eef1f5;
+    }
 
-        h2 {
-            margin-top: 0;
-            font-size: 18px;
-        }
+    h2 {
+      margin-top: 0;
+      font-size: 18px;
+    }
 
-        label {
-            display: block;
-            margin: 10px 0 4px;
-            font-size: 13px;
-            font-weight: bold;
-        }
+    label {
+      display: block;
+      margin: 10px 0 4px;
+      font-size: 13px;
+      font-weight: bold;
+    }
 
-        input,
-        textarea,
-        select {
-            width: 100%;
-            box-sizing: border-box;
-            padding: 10px 12px;
-            font-size: 14px;
-            border: 1px solid #cfcfcf;
-            border-radius: 8px;
-            background: #ffffff;
-            color: #333;
-            height: 40px;
-            appearance: none;
-            -webkit-appearance: none;
-            -moz-appearance: none;
-        }
+    input,
+    textarea,
+    select {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px 12px;
+      font-size: 14px;
+      border: 1px solid #cfcfcf;
+      border-radius: 8px;
+      background: #ffffff;
+      color: #333;
+      height: 40px;
+    }
 
-        textarea {
-            min-height: 80px;
-            height: auto;
-            resize: vertical;
-        }
+    textarea {
+      min-height: 80px;
+      height: auto;
+      resize: vertical;
+    }
 
-        .row {
-            display: flex;
-            gap: 10px;
-        }
+    .row {
+      display: flex;
+      gap: 10px;
+    }
 
-        .row>div {
-            flex: 1;
-            min-width: 0;
-        }
+    .row > div {
+      flex: 1;
+    }
 
-        .select-wrap {
-            position: relative;
-        }
+    button {
+      margin-top: 14px;
+      width: 100%;
+      padding: 11px;
+      border: 0;
+      border-radius: 8px;
+      background: #a80000;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+    }
 
-        .select-wrap select {
-            padding-right: 34px;
-        }
+    .cancel-btn {
+      background: #555;
+      margin-top: 8px;
+    }
 
-        .select-wrap::after {
-            content: "▾";
-            position: absolute;
-            right: 12px;
-            top: 50%;
-            transform: translateY(-50%);
-            pointer-events: none;
-            color: #666;
-            font-size: 14px;
-        }
+    .msg {
+      margin-top: 12px;
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      display: none;
+    }
 
-        button {
-            margin-top: 14px;
-            margin-bottom: 6px;
-            width: 100%;
-            padding: 11px 12px;
-            border: 0;
-            border-radius: 8px;
-            background: #a80000;
-            color: white;
-            font-weight: bold;
-            cursor: pointer;
-            font-size: 15px;
-        }
+    .msg.success {
+      display: block;
+      background: #e7f7ee;
+      color: #1f6b3b;
+    }
 
-        .subtle {
-            font-size: 12px;
-            color: #666;
-            margin-top: 14px;
-            margin-bottom: 10px;
-            padding-left: 2px;
-        }
+    .msg.error {
+      display: block;
+      background: #fdeaea;
+      color: #8b1e1e;
+    }
 
-        .msg {
-            margin-top: 12px;
-            padding: 10px;
-            border-radius: 6px;
-            font-size: 13px;
-            display: none;
-        }
-
-        .msg.success {
-            display: block;
-            background: #e7f7ee;
-            color: #1f6b3b;
-        }
-
-        .msg.error {
-            display: block;
-            background: #fdeaea;
-            color: #8b1e1e;
-        }
-
-        .hidden {
-            display: none;
-        }
-
-        .cancel-btn {
-            background: #555;
-            margin-top: 8px;
-        }
-
-        .cancel-btn:hover {
-            background: #333;
-        }
-    </style>
+    .hidden {
+      display: none;
+    }
+  </style>
 </head>
 
 <body>
-    <h2>Edit Reservation</h2>
+  <h2>Edit Reservation</h2>
 
-    <label>Reservation ID or Phone</label>
-    <input id="searchValue" placeholder="e.g. ABC1234 or 91234567">
-    <button type="button" id="loadBtn">Load Reservation</button>
+  <label>Reservation ID or Phone</label>
+  <input id="searchValue">
+  <button type="button" id="loadBtn">Load Reservation</button>
 
-    <div id="formWrap" class="hidden">
-        <div class="subtle" id="reservationInfo"></div>
+  <div id="formWrap" class="hidden">
+    <div id="reservationInfo"></div>
 
-        <form id="editForm">
-            <input type="hidden" name="rowNumber" id="rowNumber">
+    <form id="editForm">
+      <input type="hidden" name="rowNumber" id="rowNumber">
 
-            <div class="row">
-                <div>
-                    <label>First Name</label>
-                    <input name="firstName" id="firstName" required>
-                </div>
-                <div>
-                    <label>Last Name</label>
-                    <input name="lastName" id="lastName" required>
-                </div>
-            </div>
+      <div class="row">
+        <div>
+          <label>First Name</label>
+          <input name="firstName" id="firstName" required>
+        </div>
+        <div>
+          <label>Last Name</label>
+          <input name="lastName" id="lastName" required>
+        </div>
+      </div>
 
-            <label>Email</label>
-            <input name="email" id="email" type="email">
+      <label>Email</label>
+      <input name="email" id="email">
 
-            <label>Phone</label>
-            <input name="phone" id="phone" required>
+      <label>Phone</label>
+      <input name="phone" id="phone" required>
 
-            <div class="row">
-                <div>
-                    <label>Date</label>
-                    <input name="date" id="dateInput" type="date" required>
-                </div>
-                <div>
-                    <label>Time</label>
-                    <div class="select-wrap">
-                        <select name="time" id="timeSelect" required>
-                            <option value="">Select a time</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
+      <label>Status</label>
+      <select name="status" id="status">
+        <option value="PENDING">PENDING</option>
+        <option value="CONFIRMED">CONFIRMED</option>
+        <option value="DEPARTED">DEPARTED</option>
+        <option value="NO-SHOW">NO-SHOW</option>
+        <option value="CANCELLED">CANCELLED</option>
+      </select>
 
-            <div class="row">
-                <div>
-                    <label>Adults</label>
-                    <input name="adults" id="adults" type="number" min="0" required>
-                </div>
-                <div>
-                    <label>Children</label>
-                    <input name="children" id="children" type="number" min="0" required>
-                </div>
-            </div>
+      <div class="row">
+        <div>
+          <label>Date</label>
+          <input name="date" id="dateInput" type="date" required>
+        </div>
+        <div>
+          <label>Time</label>
+          <select name="time" id="timeSelect" required></select>
+        </div>
+      </div>
 
-            <label>Additional Request</label>
-            <textarea name="notes" id="notes"></textarea>
+      <!-- ✅ REPLACED -->
+      <label>Total Pax</label>
+      <input name="pax" id="pax" type="number" min="1" max="10" required>
 
-            <button type="submit" id="saveBtn">Save Changes</button>
-            <button type="button" id="cancelBtn" class="cancel-btn">Cancel Reservation</button>
-        </form>
-    </div>
+      <label>Additional Request</label>
+      <textarea name="notes" id="notes"></textarea>
 
-    <div id="msg" class="msg"></div>
+      <button type="submit" id="saveBtn">Save Changes</button>
+      <button type="button" id="cancelBtn" class="cancel-btn">Cancel Reservation</button>
+    </form>
+  </div>
 
-    <script>
-        const loadBtn = document.getElementById("loadBtn");
-        const saveBtn = document.getElementById("saveBtn");
-        const searchValue = document.getElementById("searchValue");
-        const formWrap = document.getElementById("formWrap");
-        const editForm = document.getElementById("editForm");
-        const msg = document.getElementById("msg");
-        const reservationInfo = document.getElementById("reservationInfo");
-        const dateInput = document.getElementById("dateInput");
-        const timeSelect = document.getElementById("timeSelect");
-        const cancelBtn = document.getElementById("cancelBtn");
+  <div id="msg" class="msg"></div>
 
-        function showMessage(text, type) {
-            msg.textContent = text;
-            msg.className = "msg " + type;
-        }
+  <script>
+    const loadBtn = document.getElementById("loadBtn");
+    const saveBtn = document.getElementById("saveBtn");
+    const searchValue = document.getElementById("searchValue");
+    const formWrap = document.getElementById("formWrap");
+    const editForm = document.getElementById("editForm");
+    const msg = document.getElementById("msg");
+    const reservationInfo = document.getElementById("reservationInfo");
+    const cancelBtn = document.getElementById("cancelBtn");
 
-        function clearMessage() {
-            msg.className = "msg";
-            msg.textContent = "";
-        }
+    function showMessage(text, type) {
+      msg.textContent = text;
+      msg.className = "msg " + type;
+    }
 
-        function setTimeOptions(times, selectedValue) {
-            timeSelect.innerHTML = "";
+    function clearMessage() {
+      msg.className = "msg";
+      msg.textContent = "";
+    }
 
-            if (!times || !times.length) {
-                const opt = document.createElement("option");
-                opt.value = "";
-                opt.textContent = "No available times";
-                timeSelect.appendChild(opt);
-                return;
-            }
+    function setTimeOptions(selectedValue) {
+      const times = [
+        "11:00","11:30","12:00","12:30","13:00","13:30","14:00",
+        "17:30","18:00","18:30","19:00","19:30","20:00","20:30","21:00"
+      ];
 
-            const placeholder = document.createElement("option");
-            placeholder.value = "";
-            placeholder.textContent = "Select a time";
-            timeSelect.appendChild(placeholder);
+      const select = document.getElementById("timeSelect");
+      select.innerHTML = "";
 
-            times.forEach(function (time) {
-                const opt = document.createElement("option");
-                opt.value = time;
-                opt.textContent = time;
-                if (selectedValue && selectedValue === time) {
-                    opt.selected = true;
-                }
-                timeSelect.appendChild(opt);
-            });
-        }
+      times.forEach(t => {
+        const opt = document.createElement("option");
+        opt.value = t;
+        opt.textContent = t;
+        if (t === selectedValue) opt.selected = true;
+        select.appendChild(opt);
+      });
+    }
 
-        function loadTimes(dateValue, selectedTime) {
-            timeSelect.innerHTML = '<option value="">Loading...</option>';
+    loadBtn.addEventListener("click", function () {
+      clearMessage();
+      loadBtn.disabled = true;
 
-            google.script.run
-                .withSuccessHandler(function (times) {
-                    setTimeOptions(times, selectedTime);
-                })
-                .withFailureHandler(function (err) {
-                    timeSelect.innerHTML = '<option value="">Unable to load times</option>';
-                    showMessage(err.message || "Failed to load available times.", "error");
-                })
-                .getAvailableTimesForSidebar(dateValue);
-        }
+      google.script.run
+        .withSuccessHandler(function (res) {
+          loadBtn.disabled = false;
 
-        loadBtn.addEventListener("click", function () {
-            clearMessage();
-            loadBtn.disabled = true;
-            formWrap.classList.add("hidden");
+          if (!res || !res.reservation) {
+            showMessage("Reservation not found.", "error");
+            return;
+          }
 
-            google.script.run
-                .withSuccessHandler(function (res) {
-                    loadBtn.disabled = false;
+          const r = res.reservation;
 
-                    const r = res.reservation;
-                    document.getElementById("rowNumber").value = res.rowNumber;
-                    document.getElementById("firstName").value = r.firstName || "";
-                    document.getElementById("lastName").value = r.lastName || "";
-                    document.getElementById("email").value = r.email || "";
-                    document.getElementById("phone").value = r.phone || "";
-                    document.getElementById("dateInput").value = r.date || "";
-                    document.getElementById("adults").value = r.adults || 0;
-                    document.getElementById("children").value = r.children || 0;
-                    document.getElementById("notes").value = r.notes || "";
+          document.getElementById("rowNumber").value = res.rowNumber;
+          document.getElementById("firstName").value = r.firstName;
+          document.getElementById("lastName").value = r.lastName;
+          document.getElementById("email").value = r.email;
+          document.getElementById("phone").value = r.phone;
+          document.getElementById("status").value = r.status;
+          document.getElementById("dateInput").value = r.date;
 
-                    reservationInfo.textContent = "Reservation ID: " + (r.id || "");
-                    formWrap.classList.remove("hidden");
+          // ✅ FIXED
+          document.getElementById("pax").value = r.pax || 0;
 
-                    loadTimes(r.date, r.time);
-                })
-                .withFailureHandler(function (err) {
-                    loadBtn.disabled = false;
-                    showMessage(err.message || "Unable to load reservation.", "error");
-                })
-                .findReservationForStaffEdit(searchValue.value);
-        });
+          document.getElementById("notes").value = r.notes || "";
 
-        dateInput.addEventListener("change", function () {
-            if (!dateInput.value) return;
-            loadTimes(dateInput.value, "");
-        });
+          reservationInfo.textContent = "Reservation ID: " + r.id;
+          formWrap.classList.remove("hidden");
 
-        editForm.addEventListener("submit", function (e) {
-            e.preventDefault();
-            clearMessage();
-            saveBtn.disabled = true;
+          setTimeOptions(r.time);
+        })
+        .withFailureHandler(function (err) {
+          loadBtn.disabled = false;
+          showMessage(err.message, "error");
+        })
+        .findReservationForStaffEdit(searchValue.value);
+    });
 
-            const data = Object.fromEntries(new FormData(editForm).entries());
+    editForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      clearMessage();
+      saveBtn.disabled = true;
 
-            google.script.run
-                .withSuccessHandler(function (res) {
-                    saveBtn.disabled = false;
-                    showMessage(res.message || "Reservation updated successfully.", "success");
-                })
-                .withFailureHandler(function (err) {
-                    saveBtn.disabled = false;
-                    showMessage(err.message || "Unable to update reservation.", "error");
-                })
-                .updateReservationByStaff(data);
-        });
+      const data = Object.fromEntries(new FormData(editForm).entries());
+      data.pax = Number(data.pax || 0);
 
-        cancelBtn.addEventListener("click", function () {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          saveBtn.disabled = false;
+          showMessage(res.message, "success");
+        })
+        .withFailureHandler(function (err) {
+          saveBtn.disabled = false;
+          showMessage(err.message, "error");
+        })
+        .updateReservationByStaff(data);
+    });
 
-            const confirmCancel = confirm("Are you sure you want to cancel this reservation?");
-            if (!confirmCancel) return;
+    cancelBtn.addEventListener("click", function () {
+      const confirmCancel = confirm("Cancel this reservation?");
+      if (!confirmCancel) return;
 
-            const rowNumber = document.getElementById("rowNumber").value;
+      const rowNumber = document.getElementById("rowNumber").value;
 
-            google.script.run
-                .withSuccessHandler(function (res) {
-                    showMessage("Reservation cancelled successfully.", "success");
-                    formWrap.classList.add("hidden");
-                })
-                .withFailureHandler(function (err) {
-                    showMessage(err.message || "Unable to cancel reservation.", "error");
-                })
-                .cancelReservationByStaff(rowNumber);
-        });
-    </script>
+      google.script.run
+        .withSuccessHandler(function (res) {
+          showMessage(res.message, "success");
+          formWrap.classList.add("hidden");
+        })
+        .withFailureHandler(function (err) {
+          showMessage(err.message, "error");
+        })
+        .cancelReservationByStaff(rowNumber);
+    });
+  </script>
 </body>
-
 </html>

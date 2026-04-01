@@ -7,7 +7,7 @@ const MAX_PAX_PER_RESERVATION = 10;
 const STAFF_NOTIFICATION_EMAIL = "chillipadinonyarestaurant63@gmail.com";
 
 // Use your exact LIVE /exec URL here
-const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwL0nax89_znlj69aS5Oq9Ap5eEmri6g9prOxtg_Ze3ZRIIlEQnM7IlG07n240w654/exec";
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwdZqRTsorlzVAvg4Otryuy8XvNlE60Sc6W4z2ajhsAGC7RkdM7bdj_AJzAuKiUpbM/exec";
 
 const RL = {
   // Existing reservation / manage flow
@@ -32,14 +32,13 @@ const COL = {
   PHONE: 6,            // F
   DATE: 7,             // G
   TIME: 8,             // H
-  ADULTS: 9,           // I
-  CHILDREN: 10,        // J
-  NOTES: 11,           // K
-  MANAGE_TOKEN: 12,    // L
-  CREATED_AT: 13,      // M
-  UPDATED_AT: 14,      // N
-  CANCELLED_AT: 15,    // O
-  TOKEN_EXPIRES_AT: 16 // P
+  PAX: 9,              // I
+  NOTES: 10,           // J
+  MANAGE_TOKEN: 11,    // K
+  CREATED_AT: 12,      // L
+  UPDATED_AT: 13,      // M
+  CANCELLED_AT: 14,    // N
+  TOKEN_EXPIRES_AT: 15 // O
 };
 
 function getSheets_() {
@@ -195,8 +194,7 @@ function getDuplicateReservationKey_(payload) {
     normalizeEmailForLimit_(payload.email),
     String(payload.date || "").trim(),
     String(payload.time || "").trim(),
-    Number(payload.adults || 0),
-    Number(payload.children || 0)
+    Number(payload.pax || 0)
   ].join("|");
 
   return "dup_new_" + sha256_(signature);
@@ -289,18 +287,13 @@ function validateReservationPayload_(payload) {
     throw new Error("Missing required fields.");
   }
 
-  const adults = Number(payload.adults || 0);
-  const children = Number(payload.children || 0);
+  const pax = Number(payload.pax || 0);
 
-  if (adults < 0 || children < 0) {
-    throw new Error("Invalid guest count.");
-  }
-
-  if (adults + children <= 0) {
+  if (pax <= 0) {
     throw new Error("Please select at least 1 guest.");
   }
 
-  if (adults + children > MAX_PAX_PER_RESERVATION) {
+  if (pax > MAX_PAX_PER_RESERVATION) {
     throw new Error("Guest count exceeds allowed maximum, Max 10 Pax.");
   }
 }
@@ -344,8 +337,7 @@ function getReservationRecord_(row) {
     phone: row[COL.PHONE - 1],
     date: normalizeDateStr_(row[COL.DATE - 1]),
     time: normalizeTimeStr_(row[COL.TIME - 1]),
-    adults: Number(row[COL.ADULTS - 1] || 0),
-    children: Number(row[COL.CHILDREN - 1] || 0),
+    pax: Number(row[COL.PAX - 1] || 0),
     notes: row[COL.NOTES - 1] || "",
     manageToken: row[COL.MANAGE_TOKEN - 1] || "",
     createdAt: row[COL.CREATED_AT - 1] || "",
@@ -420,7 +412,7 @@ function getPaxByTimeForDate_(dateStr) {
   const lastRow = reservation.getLastRow();
   if (lastRow < 2) return {};
 
-  const values = reservation.getRange(2, 1, lastRow - 1, COL.CANCELLED_AT).getValues();
+  const values = reservation.getRange(2, 1, lastRow - 1, COL.TOKEN_EXPIRES_AT).getValues();
   const paxByTime = {};
 
   for (const r of values) {
@@ -445,10 +437,7 @@ function getPaxByTimeForDate_(dateStr) {
       timeStr = s.length >= 5 ? s.slice(0, 5) : s;
     }
 
-    const adults = Number(r[COL.ADULTS - 1] || 0);
-    const children = Number(r[COL.CHILDREN - 1] || 0);
-    const pax = adults + children;
-
+    const pax = Number(r[COL.PAX - 1] || 0);
     paxByTime[timeStr] = (paxByTime[timeStr] || 0) + pax;
   }
 
@@ -560,7 +549,7 @@ function submitReservation(payload) {
 
     const paxByTime = getPaxByTimeForDate_(payload.date);
     const currentPax = paxByTime[payload.time] || 0;
-    const incomingPax = Number(payload.adults || 0) + Number(payload.children || 0);
+    const incomingPax = Number(payload.pax || 0);
 
     if (currentPax + incomingPax > MAX_PAX_PER_SLOT) {
       throw new Error("This time slot is fully booked (capacity reached). Please choose another time.");
@@ -572,22 +561,21 @@ function submitReservation(payload) {
     const tokenExpiresAt = getTokenExpiryForReservation_(payload.date, payload.time);
 
     reservation.appendRow([
-      reservationId,                 // A Reservation ID
-      "PENDING",                     // B Status
-      payload.firstName,             // C First Name
-      payload.lastName,              // D Last Name
-      payload.email || "",           // E Email
-      payload.phone,                 // F Phone
-      payload.date,                  // G Date
-      payload.time,                  // H Time
-      Number(payload.adults || 0),   // I Adults
-      Number(payload.children || 0), // J Children
-      payload.notes || "",           // K Additional Request
-      manageToken,                   // L Manage Token
-      now,                           // M Created At
-      "",                            // N Updated At
-      "",                            // O Cancelled At
-      tokenExpiresAt                 // P Token Expires At
+      reservationId,               // A Reservation ID
+      "PENDING",                   // B Status
+      payload.firstName,           // C First Name
+      payload.lastName,            // D Last Name
+      payload.email || "",         // E Email
+      payload.phone,               // F Phone
+      payload.date,                // G Date
+      payload.time,                // H Time
+      Number(payload.pax || 0),    // I Total Pax
+      payload.notes || "",         // J Additional Request
+      manageToken,                 // K Manage Token
+      now,                         // L Created At
+      "",                          // M Updated At
+      "",                          // N Cancelled At
+      tokenExpiresAt               // O Token Expires At
     ]);
 
     sendReservationEmail_(reservationId, manageToken, payload);
@@ -602,8 +590,7 @@ function submitReservation(payload) {
 function sendReservationEmail_(reservationId, manageToken, payload) {
   if (!payload.email) return;
 
-  const adults = Number(payload.adults || 0);
-  const children = Number(payload.children || 0);
+  const pax = Number(payload.pax || 0);
   const manageLink = buildManageLink_(reservationId, manageToken);
   const buttonHtml = getManageButtonHtml_(reservationId, manageToken);
 
@@ -618,8 +605,7 @@ Here are your reservation details:
 Reservation ID: ${reservationId}
 Date: ${payload.date}
 Time: ${payload.time}
-No. Of Adults: ${adults}
-No. Of Children: ${children}
+Total Pax: ${pax}
 Additional Request: ${payload.notes || "None"}
 
 Our Location:
@@ -683,12 +669,8 @@ Chilli Padi`;
                   <td>${escapeHtml_(payload.time)}</td>
                 </tr>
                 <tr>
-                  <td style="color:#666;"><b>Adults</b></td>
-                  <td>${adults}</td>
-                </tr>
-                <tr>
-                  <td style="color:#666;"><b>Children</b></td>
-                  <td>${children}</td>
+                  <td style="color:#666;"><b>Total Pax</b></td>
+                  <td>${pax}</td>
                 </tr>
                 <tr>
                   <td style="color:#666;"><b>Additional Request</b></td>
@@ -741,8 +723,7 @@ Chilli Padi`;
 function sendReservationUpdatedEmail_(reservationId, manageToken, payload, oldData) {
   if (!payload.email) return;
 
-  const adults = Number(payload.adults || 0);
-  const children = Number(payload.children || 0);
+  const pax = Number(payload.pax || 0);
   const manageLink = buildManageLink_(reservationId, manageToken);
   const buttonHtml = getManageButtonHtml_(reservationId, manageToken);
 
@@ -757,16 +738,14 @@ Previous details:
 Reservation ID: ${reservationId}
 Date: ${oldData.date}
 Time: ${oldData.time}
-Adults: ${oldData.adults}
-Children: ${oldData.children}
+Total Pax: ${oldData.pax}
 Additional Request: ${oldData.notes || "None"}
 
 Updated details:
 Reservation ID: ${reservationId}
 Date: ${payload.date}
 Time: ${payload.time}
-Adults: ${adults}
-Children: ${children}
+Total Pax: ${pax}
 Additional Request: ${payload.notes || "None"}
 
 Manage your reservation:
@@ -806,8 +785,7 @@ Chilli Padi`;
                 <tr><td width="40%"><b>Reservation ID</b></td><td>${escapeHtml_(reservationId)}</td></tr>
                 <tr><td width="40%"><b>Date</b></td><td>${escapeHtml_(oldData.date)}</td></tr>
                 <tr><td><b>Time</b></td><td>${escapeHtml_(oldData.time)}</td></tr>
-                <tr><td><b>Adults</b></td><td>${Number(oldData.adults || 0)}</td></tr>
-                <tr><td><b>Children</b></td><td>${Number(oldData.children || 0)}</td></tr>
+                <tr><td><b>Total Pax</b></td><td>${Number(oldData.pax || 0)}</td></tr>
                 <tr><td><b>Additional Request</b></td><td>${escapeHtml_(oldData.notes || "None")}</td></tr>
               </table>
 
@@ -819,8 +797,7 @@ Chilli Padi`;
                 <tr><td width="40%"><b>Reservation ID</b></td><td>${escapeHtml_(reservationId)}</td></tr>
                 <tr><td><b>Date</b></td><td>${escapeHtml_(payload.date)}</td></tr>
                 <tr><td><b>Time</b></td><td>${escapeHtml_(payload.time)}</td></tr>
-                <tr><td><b>Adults</b></td><td>${adults}</td></tr>
-                <tr><td><b>Children</b></td><td>${children}</td></tr>
+                <tr><td><b>Total Pax</b></td><td>${pax}</td></tr>
                 <tr><td><b>Additional Request</b></td><td>${escapeHtml_(payload.notes || "None")}</td></tr>
               </table>
 
@@ -880,8 +857,7 @@ Cancelled reservation details:
 Reservation ID: ${reservationId}
 Date: ${payload.date}
 Time: ${payload.time}
-Adults: ${Number(payload.adults || 0)}
-Children: ${Number(payload.children || 0)}
+Total Pax: ${Number(payload.pax || 0)}
 Additional Request: ${payload.notes || "None"}
 
 If this was a mistake, you can make a new reservation here:
@@ -921,8 +897,7 @@ Chilli Padi`;
                 <tr><td width="40%"><b>Reservation ID</b></td><td>${escapeHtml_(reservationId)}</td></tr>
                 <tr><td><b>Date</b></td><td>${escapeHtml_(payload.date)}</td></tr>
                 <tr><td><b>Time</b></td><td>${escapeHtml_(payload.time)}</td></tr>
-                <tr><td><b>Adults</b></td><td>${Number(payload.adults || 0)}</td></tr>
-                <tr><td><b>Children</b></td><td>${Number(payload.children || 0)}</td></tr>
+                <tr><td><b>Total Pax</b></td><td>${Number(payload.pax || 0)}</td></tr>
                 <tr><td><b>Additional Request</b></td><td>${escapeHtml_(payload.notes || "None")}</td></tr>
               </table>
 
@@ -966,9 +941,7 @@ function sendStaffNotificationEmail_(type, reservationId, payload, oldData) {
   if (!STAFF_NOTIFICATION_EMAIL) return;
 
   const name = [payload.firstName || "", payload.lastName || ""].join(" ").trim();
-  const adults = Number(payload.adults || 0);
-  const children = Number(payload.children || 0);
-  const totalPax = adults + children;
+  const pax = Number(payload.pax || 0);
 
   let subject = "";
   let body = "";
@@ -986,9 +959,7 @@ Email: ${payload.email || ""}
 Date: ${payload.date}
 Time: ${payload.time}
 
-Adults: ${adults}
-Children: ${children}
-Total Pax: ${totalPax}
+Total Pax: ${pax}
 
 Notes: ${payload.notes || "None"}`;
   }
@@ -1006,16 +977,13 @@ Email: ${payload.email || ""}
 Previous
 Date: ${oldData.date}
 Time: ${oldData.time}
-Adults: ${oldData.adults}
-Children: ${oldData.children}
+Total Pax: ${oldData.pax}
 Notes: ${oldData.notes || "None"}
 
 Updated
 Date: ${payload.date}
 Time: ${payload.time}
-Adults: ${adults}
-Children: ${children}
-Total Pax: ${totalPax}
+Total Pax: ${pax}
 Notes: ${payload.notes || "None"}`;
   }
 
@@ -1032,9 +1000,7 @@ Email: ${payload.email || ""}
 Date: ${payload.date}
 Time: ${payload.time}
 
-Adults: ${adults}
-Children: ${children}
-Total Pax: ${totalPax}
+Total Pax: ${pax}
 
 Notes: ${payload.notes || "None"}`;
   }
@@ -1141,8 +1107,7 @@ function updateReservation(form) {
       phone: current.phone,
       date: String(form.date || "").trim(),
       time: String(form.time || "").trim(),
-      adults: Number(form.adults != null ? form.adults : current.adults),
-      children: Number(form.children != null ? form.children : current.children),
+      pax: Number(form.pax != null ? form.pax : current.pax),
       notes: form.notes != null ? form.notes : current.notes
     };
 
@@ -1167,10 +1132,10 @@ function updateReservation(form) {
 
     if (current.date === updatedPayload.date && current.time === updatedPayload.time) {
       paxByTime[updatedPayload.time] =
-        Math.max(0, (paxByTime[updatedPayload.time] || 0) - (current.adults + current.children));
+        Math.max(0, (paxByTime[updatedPayload.time] || 0) - current.pax);
     }
 
-    const newPax = updatedPayload.adults + updatedPayload.children;
+    const newPax = Number(updatedPayload.pax || 0);
     const currentPax = paxByTime[updatedPayload.time] || 0;
 
     if (newPax <= 0) {
@@ -1192,8 +1157,7 @@ function updateReservation(form) {
 
     sheet.getRange(row, COL.DATE).setValue(updatedPayload.date);
     sheet.getRange(row, COL.TIME).setValue(updatedPayload.time);
-    sheet.getRange(row, COL.ADULTS).setValue(updatedPayload.adults);
-    sheet.getRange(row, COL.CHILDREN).setValue(updatedPayload.children);
+    sheet.getRange(row, COL.PAX).setValue(updatedPayload.pax);
     sheet.getRange(row, COL.NOTES).setValue(updatedPayload.notes);
     sheet.getRange(row, COL.MANAGE_TOKEN).setValue(newManageToken);
     sheet.getRange(row, COL.UPDATED_AT).setValue(now);
@@ -1202,16 +1166,14 @@ function updateReservation(form) {
     sendReservationUpdatedEmail_(resId, newManageToken, updatedPayload, {
       date: current.date,
       time: current.time,
-      adults: current.adults,
-      children: current.children,
+      pax: current.pax,
       notes: current.notes
     });
 
     sendStaffNotificationEmail_("UPDATE", resId, updatedPayload, {
       date: current.date,
       time: current.time,
-      adults: current.adults,
-      children: current.children,
+      pax: current.pax,
       notes: current.notes
     });
 
@@ -1270,8 +1232,7 @@ function cancelReservation(resId, token) {
       phone: current.phone,
       date: current.date,
       time: current.time,
-      adults: current.adults,
-      children: current.children,
+      pax: current.pax,
       notes: current.notes
     };
 
@@ -1285,14 +1246,19 @@ function cancelReservation(resId, token) {
 }
 
 //================================================================
+// Offline reservation creation for walk-in customers or phone reservations
+//================================================================
 
-//Offline reservation creation for walk-in customers or phone reservations
+//================================================================
+// Spreadsheet UI / staff sidebars
+//================================================================
 
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu("Reservations")
     .addItem("New Offline Reservation", "openOfflineReservationSidebar")
-    .addItem("Edit/Cancel Reservation", "openEditReservationSidebar")
+    .addItem("Edit Reservation", "openEditReservationSidebar")
+    .addItem("Block Date/Time", "openBlockingSidebar")
     .addToUi();
 }
 
@@ -1300,7 +1266,6 @@ function openOfflineReservationSidebar() {
   const html = HtmlService
     .createHtmlOutputFromFile("OfflineReservation")
     .setTitle("New Offline Reservation");
-
   SpreadsheetApp.getUi().showSidebar(html);
 }
 
@@ -1308,9 +1273,19 @@ function openEditReservationSidebar() {
   const html = HtmlService
     .createHtmlOutputFromFile("EditReservation")
     .setTitle("Edit Reservation");
-
   SpreadsheetApp.getUi().showSidebar(html);
 }
+
+function openBlockingSidebar() {
+  const html = HtmlService
+    .createHtmlOutputFromFile("BlockDateTime")
+    .setTitle("Block Date / Time");
+  SpreadsheetApp.getUi().showSidebar(html);
+}
+
+//================================================================
+// Offline reservation creation for walk-in / phone reservations
+//================================================================
 
 function createOfflineReservation(form) {
   const payload = {
@@ -1320,8 +1295,7 @@ function createOfflineReservation(form) {
     phone: String(form.phone || "").trim(),
     date: String(form.date || "").trim(),
     time: String(form.time || "").trim(),
-    adults: Number(form.adults || 0),
-    children: Number(form.children || 0),
+    pax: Number(form.pax || 0),
     notes: String(form.notes || "").trim()
   };
 
@@ -1348,7 +1322,7 @@ function createOfflineReservation(form) {
 
     const paxByTime = getPaxByTimeForDate_(payload.date);
     const currentPax = paxByTime[payload.time] || 0;
-    const incomingPax = Number(payload.adults || 0) + Number(payload.children || 0);
+    const incomingPax = Number(payload.pax || 0);
 
     if (currentPax + incomingPax > MAX_PAX_PER_SLOT) {
       throw new Error("This time slot is fully booked (capacity reached). Please choose another time.");
@@ -1368,8 +1342,7 @@ function createOfflineReservation(form) {
       payload.phone,
       payload.date,
       payload.time,
-      Number(payload.adults || 0),
-      Number(payload.children || 0),
+      Number(payload.pax || 0),
       payload.notes || "",
       manageToken,
       now,
@@ -1399,7 +1372,9 @@ function getAvailableTimesForSidebar(dateStr) {
   return getAvailableTimes(cleanDate);
 }
 
-//to edit reservation from the sidebar (Spreaadsheet UI) by staff, not using the reservation link with token
+//================================================================
+// Staff edit reservation from spreadsheet sidebar
+//================================================================
 
 function findReservationForStaffEdit(searchValue) {
   const keyword = String(searchValue || "").trim();
@@ -1413,16 +1388,15 @@ function findReservationForStaffEdit(searchValue) {
     throw new Error("No reservations found.");
   }
 
-  const values = sheet.getRange(2, 1, lastRow - 1, COL.TOKEN_EXPIRES_AT).getValues();
+  const values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
   const normalizedKeyword = keyword.toLowerCase();
   const normalizedPhoneKeyword = normalizePhoneForLimit_(keyword);
 
   for (let i = values.length - 1; i >= 0; i--) {
     const row = values[i];
-    const record = getReservationRecord_(row);
 
-    const rowResId = String(record.id || "").trim().toLowerCase();
-    const rowPhone = normalizePhoneForLimit_(record.phone || "");
+    const rowResId = String(row[COL.RES_ID - 1] || "").trim().toLowerCase();
+    const rowPhone = normalizePhoneForLimit_(row[COL.PHONE - 1] || "");
 
     if (
       rowResId === normalizedKeyword ||
@@ -1430,7 +1404,18 @@ function findReservationForStaffEdit(searchValue) {
     ) {
       return {
         rowNumber: i + 2,
-        reservation: record
+        reservation: {
+          id: String(row[COL.RES_ID - 1] || "").trim(),
+          status: String(row[COL.STATUS - 1] || "").trim(),
+          firstName: String(row[COL.FIRST_NAME - 1] || "").trim(),
+          lastName: String(row[COL.LAST_NAME - 1] || "").trim(),
+          email: String(row[COL.EMAIL - 1] || "").trim(),
+          phone: String(row[COL.PHONE - 1] || "").trim(),
+          date: normalizeDateStr_(row[COL.DATE - 1]),
+          time: normalizeTimeStr_(row[COL.TIME - 1]),
+          pax: Number(row[COL.PAX - 1] || 0),
+          notes: String(row[COL.NOTES - 1] || "").trim()
+        }
       };
     }
   }
@@ -1456,8 +1441,45 @@ function updateReservationByStaff(form) {
       throw new Error("Reservation not found.");
     }
 
-    if (String(current.status || "").toUpperCase().trim() === "CANCELLED") {
+    const currentStatus = String(current.status || "").toUpperCase().trim();
+    if (currentStatus === "CANCELLED") {
       throw new Error("Cancelled reservations cannot be edited.");
+    }
+
+    const updatedStatus = String(form.status || current.status || "PENDING").toUpperCase().trim();
+
+    // If staff changes to CANCELLED, use the cancel flow
+    if (updatedStatus === "CANCELLED") {
+      const now = getNow_();
+
+      sheet.getRange(rowNumber, COL.STATUS).setValue("CANCELLED");
+      sheet.getRange(rowNumber, COL.CANCELLED_AT).setValue(now);
+      sheet.getRange(rowNumber, COL.UPDATED_AT).setValue(now);
+      sheet.getRange(rowNumber, COL.MANAGE_TOKEN).setValue("");
+      sheet.getRange(rowNumber, COL.TOKEN_EXPIRES_AT).setValue("");
+
+      const payload = {
+        firstName: current.firstName,
+        lastName: current.lastName,
+        email: current.email,
+        phone: current.phone,
+        date: current.date,
+        time: current.time,
+        pax: current.pax,
+        notes: current.notes
+      };
+
+      if (payload.email) {
+        sendReservationCancelledEmail_(current.id, payload);
+      }
+
+      sendStaffNotificationEmail_("CANCEL", current.id, payload);
+
+      return {
+        ok: true,
+        reservationId: current.id,
+        message: "Reservation cancelled successfully."
+      };
     }
 
     const updatedPayload = {
@@ -1467,9 +1489,9 @@ function updateReservationByStaff(form) {
       phone: String(form.phone || "").trim(),
       date: String(form.date || "").trim(),
       time: String(form.time || "").trim(),
-      adults: Number(form.adults || 0),
-      children: Number(form.children || 0),
-      notes: String(form.notes || "").trim()
+      pax: Number(form.pax || 0),
+      notes: String(form.notes || "").trim(),
+      status: updatedStatus
     };
 
     validateReservationPayload_(updatedPayload);
@@ -1491,10 +1513,10 @@ function updateReservationByStaff(form) {
 
     if (current.date === updatedPayload.date && current.time === updatedPayload.time) {
       paxByTime[updatedPayload.time] =
-        Math.max(0, (paxByTime[updatedPayload.time] || 0) - (current.adults + current.children));
+        Math.max(0, (paxByTime[updatedPayload.time] || 0) - current.pax);
     }
 
-    const newPax = updatedPayload.adults + updatedPayload.children;
+    const newPax = Number(updatedPayload.pax || 0);
     const currentPax = paxByTime[updatedPayload.time] || 0;
 
     if (currentPax + newPax > MAX_PAX_PER_SLOT) {
@@ -1505,24 +1527,42 @@ function updateReservationByStaff(form) {
     const newManageToken = getManageToken_();
     const newTokenExpiresAt = getTokenExpiryForReservation_(updatedPayload.date, updatedPayload.time);
 
+    sheet.getRange(rowNumber, COL.STATUS).setValue(updatedPayload.status);
     sheet.getRange(rowNumber, COL.FIRST_NAME).setValue(updatedPayload.firstName);
     sheet.getRange(rowNumber, COL.LAST_NAME).setValue(updatedPayload.lastName);
     sheet.getRange(rowNumber, COL.EMAIL).setValue(updatedPayload.email);
     sheet.getRange(rowNumber, COL.PHONE).setValue(updatedPayload.phone);
     sheet.getRange(rowNumber, COL.DATE).setValue(updatedPayload.date);
     sheet.getRange(rowNumber, COL.TIME).setValue(updatedPayload.time);
-    sheet.getRange(rowNumber, COL.ADULTS).setValue(updatedPayload.adults);
-    sheet.getRange(rowNumber, COL.CHILDREN).setValue(updatedPayload.children);
+    sheet.getRange(rowNumber, COL.PAX).setValue(updatedPayload.pax);
     sheet.getRange(rowNumber, COL.NOTES).setValue(updatedPayload.notes);
+    sheet.getRange(rowNumber, COL.UPDATED_AT).setValue(now);
+
+    // DEPARTED / NO-SHOW = update only, no customer/staff emails
+    if (updatedPayload.status === "DEPARTED" || updatedPayload.status === "NO-SHOW") {
+      if (updatedPayload.status === "NO-SHOW") {
+        sheet.getRange(rowNumber, COL.MANAGE_TOKEN).setValue("");
+        sheet.getRange(rowNumber, COL.TOKEN_EXPIRES_AT).setValue("");
+      } else {
+        sheet.getRange(rowNumber, COL.MANAGE_TOKEN).setValue(newManageToken);
+        sheet.getRange(rowNumber, COL.TOKEN_EXPIRES_AT).setValue(newTokenExpiresAt);
+      }
+
+      return {
+        ok: true,
+        reservationId: current.id,
+        message: "Reservation updated successfully."
+      };
+    }
+
+    // Normal edit flow
     sheet.getRange(rowNumber, COL.MANAGE_TOKEN).setValue(newManageToken);
     sheet.getRange(rowNumber, COL.TOKEN_EXPIRES_AT).setValue(newTokenExpiresAt);
-    sheet.getRange(rowNumber, COL.UPDATED_AT).setValue(now);
 
     const oldData = {
       date: current.date,
       time: current.time,
-      adults: current.adults,
-      children: current.children,
+      pax: current.pax,
       notes: current.notes
     };
 
@@ -1542,10 +1582,7 @@ function updateReservationByStaff(form) {
   }
 }
 
-//Cancel reservation by staff from the spreadsheet UI, not using the reservation link with token
-
 function cancelReservationByStaff(rowNumber) {
-
   const row = Number(rowNumber || 0);
   if (!row) throw new Error("Invalid reservation row.");
 
@@ -1576,8 +1613,7 @@ function cancelReservationByStaff(rowNumber) {
     phone: record.phone,
     date: record.date,
     time: record.time,
-    adults: record.adults,
-    children: record.children,
+    pax: record.pax,
     notes: record.notes
   };
 
@@ -1587,5 +1623,182 @@ function cancelReservationByStaff(rowNumber) {
 
   sendStaffNotificationEmail_("CANCEL", record.id, payload);
 
-  return { ok: true };
+  return {
+    ok: true,
+    message: "Reservation cancelled successfully."
+  };
+}
+
+//================================================================
+// Blocking sidebar
+//================================================================
+
+function createBlockingEntry(form) {
+  const blockingSheet = getSheets_().blocking;
+  if (!blockingSheet) {
+    throw new Error("Blocking sheet not found.");
+  }
+
+  const date = String(form.date || "").trim();
+  const blockType = String(form.blockType || "").trim();
+  const startTime = String(form.startTime || "").trim();
+  const endTime = String(form.endTime || "").trim();
+  const reason = String(form.reason || "").trim() || "Blocked";
+
+  if (!date) {
+    throw new Error("Date is required.");
+  }
+
+  let finalStart = "";
+  let finalEnd = "";
+
+  if (blockType === "TIME_RANGE") {
+    if (!startTime || !endTime) {
+      throw new Error("Start time and end time are required.");
+    }
+    if (startTime >= endTime) {
+      throw new Error("End time must be later than start time.");
+    }
+    finalStart = startTime;
+    finalEnd = endTime;
+  }
+
+  blockingSheet.appendRow([
+    date,        // A Date
+    finalStart,  // B Start
+    finalEnd,    // C End
+    reason,      // D Reason
+    "Active"     // E Active
+  ]);
+
+  return {
+    ok: true,
+    message: blockType === "FULL_DAY"
+      ? "Full-day block added successfully."
+      : "Time block added successfully."
+  };
+}
+
+function getBlockingEntriesByDate(dateStr) {
+  const cleanDate = String(dateStr || "").trim();
+  if (!cleanDate) return [];
+
+  const blockingSheet = getSheets_().blocking;
+  if (!blockingSheet) return [];
+
+  const lastRow = blockingSheet.getLastRow();
+  if (lastRow < 2) return [];
+
+  const values = blockingSheet.getRange(2, 1, lastRow - 1, 5).getValues();
+  const tz = Session.getScriptTimeZone();
+
+  return values
+    .map(function(row, index) {
+      const rowDate = row[0] instanceof Date
+        ? Utilities.formatDate(row[0], tz, "yyyy-MM-dd")
+        : String(row[0] || "").trim();
+
+      const start = row[1] instanceof Date
+        ? Utilities.formatDate(row[1], tz, "HH:mm")
+        : String(row[1] || "").trim();
+
+      const end = row[2] instanceof Date
+        ? Utilities.formatDate(row[2], tz, "HH:mm")
+        : String(row[2] || "").trim();
+
+      return {
+        rowNumber: index + 2,
+        date: rowDate,
+        startTime: start,
+        endTime: end,
+        reason: String(row[3] || "").trim(),
+        active: String(row[4] || "").trim()
+      };
+    })
+    .filter(function(item) {
+      return item.date === cleanDate && String(item.active).toLowerCase() === "active";
+    });
+}
+
+function deactivateBlockingEntry(rowNumber) {
+  const row = Number(rowNumber || 0);
+  if (!row) {
+    throw new Error("Invalid blocking row.");
+  }
+
+  const blockingSheet = getSheets_().blocking;
+  if (!blockingSheet) {
+    throw new Error("Blocking sheet not found.");
+  }
+
+  blockingSheet.getRange(row, 5).setValue("Inactive");
+
+  return {
+    ok: true,
+    message: "Blocking entry deactivated."
+  };
+}
+
+// Debug
+function debugFindReservation() {
+  const result = debugFindReservationInternal_("F8MK7B2");
+  Logger.log(result);
+}
+
+function debugFindReservationByValue(value) {
+  const result = debugFindReservationInternal_(value);
+  Logger.log(JSON.stringify(result));
+}
+
+function debugTestF8MK7B2() {
+  debugFindReservationByValue("F8MK7B2");
+}
+
+function debugTest84729273() {
+  debugFindReservationByValue("84729273");
+}
+
+function debugFindReservationInternal_(searchValue) {
+  const keyword = String(searchValue || "").trim();
+  const sheet = getReservationSheet_();
+  const lastRow = sheet.getLastRow();
+
+  const result = {
+    searchValue: keyword,
+    reservationSheetName: sheet.getName(),
+    lastRow: lastRow,
+    matches: []
+  };
+
+  if (lastRow < 2) return result;
+
+  const values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  const normalizedKeyword = keyword.toLowerCase();
+  const normalizedPhoneKeyword = normalizePhoneForLimit_(keyword);
+
+  for (let i = 0; i < values.length; i++) {
+    const row = values[i];
+    const resId = String(row[COL.RES_ID - 1] || "").trim();
+    const phone = String(row[COL.PHONE - 1] || "").trim();
+
+    const rowResId = resId.toLowerCase();
+    const rowPhone = normalizePhoneForLimit_(phone);
+
+    if (
+      rowResId === normalizedKeyword ||
+      (normalizedPhoneKeyword && rowPhone === normalizedPhoneKeyword)
+    ) {
+      result.matches.push({
+        rowNumber: i + 2,
+        reservationId: resId,
+        phone: phone,
+        status: String(row[COL.STATUS - 1] || "").trim(),
+        date: String(row[COL.DATE - 1] || "").trim(),
+        time: String(row[COL.TIME - 1] || "").trim(),
+        pax: Number(row[COL.PAX - 1] || 0)
+      });
+    }
+  }
+
+  return result;
 }

@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <base target="_top">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 16px;
+            color: #333;
+            background: #eef1f5;
+        }
+
+        h2 {
+            margin-top: 0;
+            font-size: 18px;
+        }
+
+        label {
+            display: block;
+            margin: 10px 0 4px;
+            font-size: 13px;
+            font-weight: bold;
+        }
+
+        input,
+        select,
+        button {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 10px 12px;
+            font-size: 14px;
+            border: 1px solid #cfcfcf;
+            border-radius: 8px;
+            background: #fff;
+            color: #333;
+            height: 40px;
+        }
+
+        button {
+            border: 0;
+            background: #a80000;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 14px;
+        }
+
+        .secondary {
+            background: #666;
+            margin-top: 8px;
+        }
+
+        .msg {
+            margin-top: 12px;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            display: none;
+        }
+
+        .msg.success {
+            display: block;
+            background: #e7f7ee;
+            color: #1f6b3b;
+        }
+
+        .msg.error {
+            display: block;
+            background: #fdeaea;
+            color: #8b1e1e;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .entry {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 10px;
+            margin-top: 8px;
+            font-size: 13px;
+        }
+
+        .entry strong {
+            display: inline-block;
+            min-width: 90px;
+        }
+
+        .entry .row {
+            margin-bottom: 4px;
+        }
+
+        .muted {
+            color: #666;
+        }
+
+        .select-wrap {
+            position: relative;
+        }
+
+        .select-wrap select {
+            padding-right: 34px;
+        }
+
+        .select-wrap::after {
+            content: "▾";
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            pointer-events: none;
+            color: #666;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>Block Date / Time</h2>
+
+    <form id="blockForm">
+        <label>Date</label>
+        <input type="date" name="date" id="dateInput" required>
+
+        <label>Block Type</label>
+        <select name="blockType" id="blockType" required>
+            <option value="FULL_DAY">Full Day</option>
+            <option value="TIME_RANGE">Time Range</option>
+        </select>
+
+        <div id="timeFields" class="hidden">
+            <label>Start Time</label>
+            <div class="select-wrap">
+                <select name="startTime" id="startTime">
+                    <option value="">Select start time</option>
+                </select>
+            </div>
+
+            <label>End Time</label>
+            <div class="select-wrap">
+                <select name="endTime" id="endTime">
+                    <option value="">Select end time</option>
+                </select>
+            </div>
+        </div>
+
+        <label>Reason</label>
+        <input type="text" name="reason" id="reason" placeholder="Maintenance / Fully Booked / Event">
+
+        <button type="submit" id="saveBtn">Add Blocking</button>
+        <button type="button" class="secondary" id="loadBtn">View Existing Blocks</button>
+    </form>
+
+    <div id="msg" class="msg"></div>
+    <div id="entries"></div>
+
+    <script>
+        const blockForm = document.getElementById("blockForm");
+        const blockType = document.getElementById("blockType");
+        const timeFields = document.getElementById("timeFields");
+        const dateInput = document.getElementById("dateInput");
+        const startTime = document.getElementById("startTime");
+        const endTime = document.getElementById("endTime");
+        const saveBtn = document.getElementById("saveBtn");
+        const loadBtn = document.getElementById("loadBtn");
+        const msg = document.getElementById("msg");
+        const entries = document.getElementById("entries");
+
+        function showMessage(text, type) {
+            msg.textContent = text;
+            msg.className = "msg " + type;
+        }
+
+        function clearMessage() {
+            msg.textContent = "";
+            msg.className = "msg";
+        }
+
+        function toggleTimeFields() {
+            if (blockType.value === "TIME_RANGE") {
+                timeFields.classList.remove("hidden");
+            } else {
+                timeFields.classList.add("hidden");
+                startTime.value = "";
+                endTime.value = "";
+            }
+        }
+
+        function renderEntries(items) {
+            entries.innerHTML = "";
+
+            if (!items || !items.length) {
+                entries.innerHTML = '<div class="entry">No active blocking entries for this date.</div>';
+                return;
+            }
+
+            items.forEach(function (item) {
+                const div = document.createElement("div");
+                div.className = "entry";
+
+                const blockedLabel = (!item.startTime && !item.endTime)
+                    ? "Full Day"
+                    : item.startTime + " - " + item.endTime;
+
+                div.innerHTML = `
+          <div class="row"><strong>Date:</strong> ${item.date}</div>
+          <div class="row"><strong>Blocked:</strong> ${blockedLabel}</div>
+          <div class="row"><strong>Reason:</strong> ${item.reason || '<span class="muted">-</span>'}</div>
+          <div class="row"><strong>Active:</strong> ${item.active || ""}</div>
+          <button type="button" style="margin-top:8px;background:#666;" data-row="${item.rowNumber}">
+            Deactivate
+          </button>
+        `;
+
+                div.querySelector("button").addEventListener("click", function () {
+                    google.script.run
+                        .withSuccessHandler(function (res) {
+                            showMessage(res.message || "Deactivated.", "success");
+                            loadEntries();
+                        })
+                        .withFailureHandler(function (err) {
+                            showMessage(err.message || "Unable to deactivate.", "error");
+                        })
+                        .deactivateBlockingEntry(item.rowNumber);
+                });
+
+                entries.appendChild(div);
+            });
+        }
+
+        function loadEntries() {
+            clearMessage();
+            entries.innerHTML = "";
+
+            if (!dateInput.value) {
+                showMessage("Please choose a date first.", "error");
+                return;
+            }
+
+            google.script.run
+                .withSuccessHandler(function (items) {
+                    renderEntries(items);
+                })
+                .withFailureHandler(function (err) {
+                    showMessage(err.message || "Unable to load blocking entries.", "error");
+                })
+                .getBlockingEntriesByDate(dateInput.value);
+        }
+
+        blockType.addEventListener("change", toggleTimeFields);
+        toggleTimeFields();
+
+        loadBtn.addEventListener("click", loadEntries);
+
+        blockForm.addEventListener("submit", function (e) {
+            e.preventDefault();
+            clearMessage();
+            saveBtn.disabled = true;
+
+            const data = Object.fromEntries(new FormData(blockForm).entries());
+
+            google.script.run
+                .withSuccessHandler(function (res) {
+                    saveBtn.disabled = false;
+                    showMessage(res.message || "Blocking added.", "success");
+                    loadEntries();
+                })
+                .withFailureHandler(function (err) {
+                    saveBtn.disabled = false;
+                    showMessage(err.message || "Unable to add blocking.", "error");
+                })
+                .createBlockingEntry(data);
+        });
+
+        const TIME_OPTIONS = [
+            "11:30", "11:45", "12:00", "12:15", "12:30", "12:45",
+            "13:00", "13:15", "13:30", "13:45", "14:00", "14:15",
+            "17:30", "17:45", "18:00", "18:15", "18:30", "18:45",
+            "19:00", "19:15", "19:30", "19:45", "20:00", "20:15",
+            "20:30", "20:45", "21:00", "21:15", "21:30"
+        ];
+
+        function populateTimeSelect(selectEl, placeholder) {
+            selectEl.innerHTML = "";
+
+            const first = document.createElement("option");
+            first.value = "";
+            first.textContent = placeholder;
+            selectEl.appendChild(first);
+
+            TIME_OPTIONS.forEach(function (time) {
+                const opt = document.createElement("option");
+                opt.value = time;
+                opt.textContent = time;
+                selectEl.appendChild(opt);
+            });
+        }
+        populateTimeSelect(startTime, "Select start time");
+        populateTimeSelect(endTime, "Select end time");
+
+    </script>
+</body>
+
+</html>
